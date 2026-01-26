@@ -38,12 +38,13 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 // 2. Firebase Config (Paste your specific object here)
 // You get this from Firebase Console -> Project Settings -> General -> Your Apps
 const firebaseConfig = {
-  apiKey: "AIzaSy... (your actual key)",
-  authDomain: "your-project.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project.firebasestorage.app",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef"
+  apiKey: "AIzaSyAu3Mwy1E82hS_8n9nfmaxl_ji7XWb5KoM",
+  authDomain: "syntra-9e959.firebaseapp.com",
+  projectId: "syntra-9e959",
+  storageBucket: "syntra-9e959.firebasestorage.app",
+  messagingSenderId: "858952912964",
+  appId: "1:858952912964:web:eef39b1b848a0090af2c11",
+  measurementId: "G-P3G12J3TTE"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -765,3 +766,4 @@ const JournalModule = ({ t, userId, lang, appId }) => {
   );
 
 }
+
