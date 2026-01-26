@@ -59,6 +59,9 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = initializeFirestore(app, {
   experimentalForceLongPolling: true, // <--- CRITICAL FIX FOR "OFFLINE" ERROR
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
 });
 
 // 3. STATIC APP ID
@@ -85,8 +88,9 @@ const callGemini = async (prompt, systemInstruction = "") => {
       return "AI is currently offline (Key Missing). Please update the code with your API Key.";
   }
   try {
+    // CHANGED MODEL TO STANDARD PUBLIC MODEL: gemini-1.5-flash
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -98,8 +102,8 @@ const callGemini = async (prompt, systemInstruction = "") => {
     );
     
     if (response.status === 403) {
-        console.error("Gemini API Error 403: Access Forbidden. Please check Google AI Studio > Get API Key > API restrictions.");
-        return "AI Error: 403 Forbidden. Check API Key restrictions.";
+        console.error("Gemini API Error 403: Invalid Key or Permissions.");
+        return "AI Error: Access Denied (Check API Key).";
     }
 
     const data = await response.json();
