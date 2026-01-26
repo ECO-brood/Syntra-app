@@ -36,9 +36,9 @@ import {
 // --- CONFIGURATION ---
 
 // 1. GEMINI API KEY
-// Uncomment this line for Vercel:
-// const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-const apiKey = ""; // Placeholder for local dev.
+// IMPORTANT: For Vercel Deployment, UNCOMMENT the line below and DELETE the empty string line.
+// const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
+const apiKey = ""; // Placeholder to prevent preview crash. Replace this line for Vercel.
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = {
@@ -50,7 +50,6 @@ const firebaseConfig = {
   appId: "1:858952912964:web:eef39b1b848a0090af2c11",
   measurementId: "G-P3G12J3TTE"
 };
-
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
