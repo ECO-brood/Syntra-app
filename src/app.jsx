@@ -5,7 +5,7 @@ import {
   ArrowRight, Sparkles, Send, Plus, Trash2, Smile, 
   Activity, Lightbulb, LogOut, Lock, Mail, UserCircle,
   PenTool, ShieldCheck, Cloud, RefreshCw, MailCheck, Bell,
-  Menu, X, Edit3, AlertTriangle
+  Menu, X, Edit3, AlertTriangle, WifiOff
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -37,11 +37,10 @@ import {
 // 1. GEMINI API KEY
 // IMPORTANT: For Vercel Deployment, UNCOMMENT the line below and DELETE the empty string line.
 // const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
-const apiKey = ""; // Placeholder for local dev/preview if needed.
+const apiKey = ""; // Placeholder.
 
 // 2. FIREBASE CONFIGURATION
 // !!! YOU MUST PASTE YOUR REAL CONFIG HERE !!!
-// Go to: Firebase Console -> Project Settings -> General -> Your Apps -> Config
 const firebaseConfig = {
   apiKey: "AIzaSyAu3Mwy1E82hS_8n9nfmaxl_ji7XWb5KoM",
   authDomain: "syntra-9e959.firebaseapp.com",
@@ -51,7 +50,6 @@ const firebaseConfig = {
   appId: "1:858952912964:web:eef39b1b848a0090af2c11",
   measurementId: "G-P3G12J3TTE"
 };
-
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -59,6 +57,14 @@ const db = getFirestore(app);
 
 // 3. STATIC APP ID
 const appId = 'syntra-web-v1';
+
+// --- FALLBACK DATA (Prevents White Screen) ---
+const MOCK_PROFILE = {
+  name: "Guest Student",
+  age: "18",
+  c_score: 50,
+  o_score: 50
+};
 
 // --- HELPER: SIMULATED AUTH ID ---
 const getHybridUserId = (email) => {
@@ -131,7 +137,8 @@ const LANGUAGES = {
     auth_note: "Note: Authenticated via Secure Session.",
     task_auto_added: "Task added:",
     task_auto_updated: "Task updated:",
-    offline_mode: "Working Offline"
+    offline_mode: "Offline Mode",
+    connect_error: "Connection Issue"
   },
   ar: {
     welcome: "مرحباً بك في سينترا",
@@ -174,7 +181,8 @@ const LANGUAGES = {
     auth_note: "ملاحظة: تم التوثيق عبر جلسة آمنة.",
     task_auto_added: "تم إضافة:",
     task_auto_updated: "تم تعديل:",
-    offline_mode: "وضع غير متصل"
+    offline_mode: "وضع غير متصل",
+    connect_error: "مشكلة في الاتصال"
   }
 };
 
@@ -203,10 +211,10 @@ export default function SyntraApp() {
     const init = async () => {
       const storedEmail = localStorage.getItem('syntra_user_email');
       
-      // Try to establish connection, handle offline/auth failure gracefully
+      // Attempt anonymous auth if not logged in
       if (!auth.currentUser) {
-        await signInAnonymously(auth).catch((e) => {
-            console.warn("Anon auth failed, likely config/network issue:", e);
+        await signInAnonymously(auth).catch(() => {
+            console.warn("Offline: Auth failed.");
             setIsOffline(true);
         });
       }
@@ -214,9 +222,15 @@ export default function SyntraApp() {
       if (storedEmail) {
         const hybridId = getHybridUserId(storedEmail);
         setActiveUserId(hybridId);
+        
+        // TIMEOUT RACE: If Firestore takes > 5s, fail to offline mode
+        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000));
+        
         try {
           const docRef = doc(db, 'artifacts', appId, 'users', hybridId, 'data', 'profile');
-          const snap = await getDoc(docRef);
+          // Race between fetching data and 5s timeout
+          const snap = await Promise.race([getDoc(docRef), timeout]);
+          
           if (snap.exists()) {
             setUserProfile(snap.data());
             setView('dashboard');
@@ -224,11 +238,11 @@ export default function SyntraApp() {
             setView('onboarding');
           }
         } catch (e) {
-          console.error("Profile Load Failed:", e);
+          console.error("Init Error or Timeout:", e);
           setIsOffline(true);
-          // If we can't load profile, assume new or offline. 
-          // If offline, we might be stuck, but better to go to onboarding than hang.
-          setView('onboarding');
+          // FALLBACK: If we have an email but can't reach DB, show mock profile to avoid white screen
+          setUserProfile(MOCK_PROFILE); 
+          setView('dashboard');
         }
       } else {
         setView('auth');
@@ -241,19 +255,19 @@ export default function SyntraApp() {
   const handleLoginSuccess = async (email) => {
     setLoading(true);
     if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(e => {
-            console.warn("Login Anon Auth Failed:", e);
-            setIsOffline(true);
-        });
+        await signInAnonymously(auth).catch(() => setIsOffline(true));
     }
 
     const hybridId = getHybridUserId(email);
     localStorage.setItem('syntra_user_email', email);
     setActiveUserId(hybridId);
 
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000));
+
     try {
       const docRef = doc(db, 'artifacts', appId, 'users', hybridId, 'data', 'profile');
-      const snap = await getDoc(docRef);
+      const snap = await Promise.race([getDoc(docRef), timeout]);
+      
       if (snap.exists()) {
         setUserProfile(snap.data());
         setView('dashboard');
@@ -261,8 +275,9 @@ export default function SyntraApp() {
         setView('onboarding');
       }
     } catch (e) {
-      console.error("Login Fetch Error:", e);
+      console.error("Login Error:", e);
       setIsOffline(true);
+      // Fallback to onboarding if connection fails during login (safer assumption than dashboard)
       setView('onboarding');
     }
     setLoading(false);
@@ -272,8 +287,8 @@ export default function SyntraApp() {
     // 1. Set local state immediately so user is NOT STUCK
     setUserProfile(profileData);
     
-    // 2. Try to save to cloud
-    if (activeUserId) {
+    // 2. Try to save to cloud (Fire & Forget)
+    if (activeUserId && !isOffline) {
       try {
         await setDoc(doc(db, 'artifacts', appId, 'users', activeUserId, 'data', 'profile'), {
           ...profileData,
@@ -284,7 +299,7 @@ export default function SyntraApp() {
         // Generate Welcome Email
         const emailBody = await callGemini(
           `Write a short, professional welcome email for student ${profileData.name}. 
-           Mention their traits (C:${profileData.c_score}, O:${profileData.o_score}) are analyzed. Language: ${lang}.`
+           Mention their traits (C:${profileData.c_score}, O:${profileData.o_score}). Language: ${lang}.`
         );
         
         await addDoc(collection(db, 'artifacts', appId, 'users', activeUserId, 'inbox'), {
@@ -294,19 +309,21 @@ export default function SyntraApp() {
           date: serverTimestamp()
         });
       } catch (e) {
-        console.error("Cloud Save Failed (Offline Mode Activated):", e);
+        console.error("Cloud Save Failed:", e);
         setIsOffline(true);
-        // We do NOT block the view change. User proceeds to dashboard in "Offline Mode".
       }
+    } else {
+        console.log("Offline mode: Skipping cloud save.");
+        setIsOffline(true);
     }
     
-    // 3. Move to Dashboard
+    // 3. Move to Dashboard immediately
     setView('dashboard');
   };
 
   const handleLogout = async () => {
     localStorage.removeItem('syntra_user_email');
-    await signOut(auth).catch(e => console.warn("Signout warning:", e));
+    await signOut(auth).catch(() => {});
     setActiveUserId(null);
     setUserProfile(null);
     setView('auth');
@@ -326,7 +343,7 @@ export default function SyntraApp() {
         <div className="flex gap-4 items-center">
           {activeUserId && (
             <div className={`hidden md:flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full border ${isOffline ? 'text-amber-600 bg-amber-50 border-amber-100' : 'text-teal-600 bg-teal-50 border-teal-100'}`}>
-              {isOffline ? <AlertTriangle size={12}/> : <Cloud size={12} />} 
+              {isOffline ? <WifiOff size={12}/> : <Cloud size={12} />} 
               {isOffline ? t.offline_mode : t.syncing}
             </div>
           )}
@@ -368,6 +385,7 @@ const AuthScreen = ({ t, onLogin }) => {
     if (password.length < 6) { setError("Password too short."); setIsLoading(false); return; }
 
     try {
+        // Try real auth first
         if (isLogin) {
             await signInWithEmailAndPassword(getAuth(), email, password);
         } else {
@@ -376,15 +394,14 @@ const AuthScreen = ({ t, onLogin }) => {
         onLogin(email);
     } catch (err) {
         console.error("Auth Error:", err);
-        // Handle common Firebase Auth errors
+        // Robust Error Handling / Fallback Logic
         if (err.code === 'auth/operation-not-allowed' || err.code === 'auth/admin-restricted-operation') {
-             // Fallback to Hybrid Auth if Email/Pass is not enabled in Console
-             console.warn("Auth disabled in console, falling back to hybrid simulation.");
-             setTimeout(() => onLogin(email), 1000);
+             console.warn("Auth disabled, using simulation.");
+             setTimeout(() => onLogin(email), 1000); // Simulate login if auth is disabled (Preview Mode)
              return;
         } else if (err.code === 'auth/email-already-in-use') {
             setError("Account exists. Log in.");
-        } else if (err.code === 'auth/invalid-credential') {
+        } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
             setError("Invalid credentials.");
         } else {
             setError("Login failed. Check console.");
@@ -401,8 +418,8 @@ const AuthScreen = ({ t, onLogin }) => {
         const guestId = "guest_" + Math.random().toString(36).substr(2, 9);
         onLogin(guestId);
     } catch (e) {
-        // If Anonymous Auth is also disabled, fallback completely
-        console.error(e);
+        console.error("Guest Auth Failed:", e);
+        // Fallback for strict offline environments
         onLogin("guest_offline");
     } finally {
         setIsLoading(false);
@@ -451,7 +468,7 @@ const OnboardingFlow = ({ t, onComplete }) => {
   const handleEssaySubmit = (essayData) => {
     const finalData = { ...data, ...essayData };
     setStep(3);
-    // Directly proceed instead of waiting, parent handles async save
+    // Proceed immediately - don't wait for cloud
     onComplete(finalData); 
   };
 
@@ -731,7 +748,7 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
        <div className="flex-1 overflow-y-auto p-8 space-y-6">
           {msgs.length === 0 && <div className="text-center text-slate-400 mt-20 opacity-50">{t.chat_placeholder}</div>}
           {msgs.map((m) => (
-            <div key={m.id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
+            <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
               <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'}`}>{m.text}</div>
             </div>
           ))}
