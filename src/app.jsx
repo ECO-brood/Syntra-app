@@ -1,14 +1,47 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, Brain, CheckCircle, MessageCircle, Calendar, Settings, User, Globe, ArrowRight, Sparkles, Send, Plus, Trash2, Smile, Activity, Lightbulb, LogOut, Lock, Mail, UserCircle, PenTool, ShieldCheck, Cloud, RefreshCw, MailCheck, Bell, Menu, X, Edit3 } from 'lucide-react';
+import { 
+  BookOpen, Brain, CheckCircle, ChevronRight, 
+  MessageCircle, Calendar, Settings, User, Globe, 
+  ArrowRight, Sparkles, Send, Plus, Trash2, Smile, 
+  Activity, Lightbulb, LogOut, Lock, Mail, UserCircle,
+  PenTool, ShieldCheck, Cloud, RefreshCw, MailCheck, Bell,
+  Menu, X, Edit3
+} from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, doc, setDoc, getDoc, deleteDoc, updateDoc, where } from 'firebase/firestore';
+import { 
+  getAuth, 
+  signInAnonymously,
+  signInWithCustomToken,
+  onAuthStateChanged,
+  signOut,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  query, 
+  onSnapshot, 
+  serverTimestamp, 
+  doc, 
+  setDoc, 
+  getDoc,
+  deleteDoc,
+  updateDoc,
+  where
+} from 'firebase/firestore';
 
-// --- 1. SETUP KEYS ---
-// Paste your Gemini API Key here (keep the quotes)
-const apiKey = "PASTE_YOUR_GEMINI_KEY_HERE"; 
+// --- CONFIGURATION (VERCEL READY) ---
 
-// Paste your Firebase Config here (from Console -> Project Settings)
+// 1. GEMINI API KEY
+// IMPORTANT: For Vercel Deployment, UNCOMMENT the line below and DELETE the empty string line.
+// const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
+const apiKey = ""; // Placeholder for local dev/preview if needed.
+
+// 2. FIREBASE CONFIGURATION
+// !!! YOU MUST PASTE YOUR REAL CONFIG HERE !!!
+// Go to: Firebase Console -> Project Settings -> General -> Your Apps -> Config
 const firebaseConfig = {
   apiKey: "AIzaSyAu3Mwy1E82hS_8n9nfmaxl_ji7XWb5KoM",
   authDomain: "syntra-9e959.firebaseapp.com",
@@ -19,10 +52,12 @@ const firebaseConfig = {
   measurementId: "G-P3G12J3TTE"
 };
 
-// --- 2. INITIALIZE ---
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// 3. STATIC APP ID
 const appId = 'syntra-web-v1';
 
 // --- HELPER: SIMULATED AUTH ID ---
@@ -33,7 +68,6 @@ const getHybridUserId = (email) => {
 
 // --- GEMINI API HELPER ---
 const callGemini = async (prompt, systemInstruction = "") => {
-  if (!apiKey || apiKey.includes("PASTE_YOUR")) return "Error: API Key missing.";
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
@@ -47,7 +81,7 @@ const callGemini = async (prompt, systemInstruction = "") => {
       }
     );
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "Connection error.";
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || "معلش، الشبكة مهنجة شوية.";
   } catch (error) {
     console.error("Gemini Error:", error);
     return "Error: AI Service Unavailable.";
@@ -56,8 +90,90 @@ const callGemini = async (prompt, systemInstruction = "") => {
 
 // --- LOCALIZATION ---
 const LANGUAGES = {
-  en: { welcome: "Welcome to Syntra", subtitle: "Discover your brain's optimal learning code.", start: "Start Journey", login_title: "Student Portal", signup_title: "New Registration", email: "Email Address", password: "Password", name: "Full Name", age: "Age", login_btn: "Secure Login", signup_btn: "Create Account", guest_btn: "Access Platform", switch_signup: "New here? Register", switch_login: "Have account? Sign in", dashboard: "Dashboard", chat: "Aura Guide", plan: "Smart Planner", journal: "Neuro Journal", task_add: "Add Task", task_magic: "Magic Breakdown", submit: "Submit", next: "Next", analyzing: "Analyzing Profile...", logout: "Log Out", scenario: "Scenario", delete: "Delete", chat_placeholder: "Talk to Aura...", essay_c: "Think about a time you had a very difficult goal. How did you handle the pressure and the planning?", essay_o: "If you could invent a new subject to be taught in schools that doesn't exist yet, what would it be and why?", essay_free: "Free Space (20 mins): Write about anything on your mind right now.", essay_title_c: "Part 1: Behavior Analysis", essay_title_o: "Part 2: Imagination Analysis", essay_title_free: "Part 3: Free Association", type_here: "Type your response here...", syncing: "Cloud Sync", inbox: "Inbox", welcome_subject: "Welcome to Syntra!", auth_note: "Note: Authenticated via Secure Session.", task_auto_added: "Task added:", task_auto_updated: "Task updated:" },
-  ar: { welcome: "مرحباً بك في سينترا", subtitle: "اكتشف الطريقة المثالية لمخك في المذاكرة", start: "ابدأ الرحلة", login_title: "بوابة الطالب", signup_title: "تسجيل جديد", email: "البريد الإلكتروني", password: "كلمة المرور", name: "الاسم بالكامل", age: "العمر", login_btn: "دخول آمن", signup_btn: "إنشاء حساب", guest_btn: "دخول المنصة", switch_signup: "جديد؟ سجل الآن", switch_login: "لديك حساب؟ دخول", dashboard: "الرئيسية", chat: "المساعد (أورا)", plan: "المهام الذكية", journal: "المذكرات", task_add: "إضافة مهمة", task_magic: "تقسيم ذكي", submit: "تأكيد", next: "التالي", analyzing: "جاري التحليل...", logout: "خروج", scenario: "موقف", delete: "حذف", chat_placeholder: "اتكلم مع أورا...", essay_c: "افتكر موقف كان عندك فيه هدف صعب جداً. اتصرفت ازاي مع الضغط والتخطيط؟", essay_o: "لو تقدر تخترع مادة جديدة تدرس في المدارس مش موجودة دلوقتي، هتكون إيه وليه؟", essay_free: "مساحة حرة (٢٠ دقيقة): اكتب عن أي حاجة في دماغك دلوقتي.", essay_title_c: "الجزء ١: تحليل السلوك", essay_title_o: "الجزء ٢: تحليل الخيال", essay_title_free: "الجزء ٣: مساحة حرة", type_here: "اكتب إجابتك هنا...", syncing: "متزامن", inbox: "صندوق الوارد", welcome_subject: "مرحباً بك في سينترا!", auth_note: "ملاحظة: تم التوثيق عبر جلسة آمنة.", task_auto_added: "تم إضافة:", task_auto_updated: "تم تعديل:" }
+  en: {
+    welcome: "Welcome to Syntra",
+    subtitle: "Discover your brain's optimal learning code.",
+    start: "Start Journey",
+    login_title: "Student Portal",
+    signup_title: "New Registration",
+    email: "Email Address",
+    password: "Password",
+    name: "Full Name",
+    age: "Age",
+    login_btn: "Secure Login",
+    signup_btn: "Create Account",
+    guest_btn: "Access Platform",
+    switch_signup: "New here? Register",
+    switch_login: "Have account? Sign in",
+    dashboard: "Dashboard",
+    chat: "Aura Guide",
+    plan: "Smart Planner",
+    journal: "Neuro Journal",
+    task_add: "Add Task",
+    task_magic: "Magic Breakdown",
+    submit: "Submit",
+    next: "Next",
+    analyzing: "Analyzing Profile...",
+    logout: "Log Out",
+    scenario: "Scenario",
+    delete: "Delete",
+    chat_placeholder: "Talk to Aura...",
+    essay_c: "Think about a time you had a very difficult goal. How did you handle the pressure and the planning?",
+    essay_o: "If you could invent a new subject to be taught in schools that doesn't exist yet, what would it be and why?",
+    essay_free: "Free Space (20 mins): Write about anything on your mind right now.",
+    essay_title_c: "Part 1: Behavior Analysis",
+    essay_title_o: "Part 2: Imagination Analysis",
+    essay_title_free: "Part 3: Free Association",
+    type_here: "Type your response here...",
+    syncing: "Cloud Sync",
+    inbox: "Inbox",
+    welcome_subject: "Welcome to Syntra!",
+    auth_note: "Note: Authenticated via Secure Session.",
+    task_auto_added: "Task added:",
+    task_auto_updated: "Task updated:"
+  },
+  ar: {
+    welcome: "مرحباً بك في سينترا",
+    subtitle: "اكتشف الطريقة المثالية لمخك في المذاكرة",
+    start: "ابدأ الرحلة",
+    login_title: "بوابة الطالب",
+    signup_title: "تسجيل جديد",
+    email: "البريد الإلكتروني",
+    password: "كلمة المرور",
+    name: "الاسم بالكامل",
+    age: "العمر",
+    login_btn: "دخول آمن",
+    signup_btn: "إنشاء حساب",
+    guest_btn: "دخول المنصة",
+    switch_signup: "جديد؟ سجل الآن",
+    switch_login: "لديك حساب؟ دخول",
+    dashboard: "الرئيسية",
+    chat: "المساعد (أورا)",
+    plan: "المهام الذكية",
+    journal: "المذكرات",
+    task_add: "إضافة مهمة",
+    task_magic: "تقسيم ذكي",
+    submit: "تأكيد",
+    next: "التالي",
+    analyzing: "جاري التحليل...",
+    logout: "خروج",
+    scenario: "موقف",
+    delete: "حذف",
+    chat_placeholder: "اتكلم مع أورا...",
+    essay_c: "افتكر موقف كان عندك فيه هدف صعب جداً. اتصرفت ازاي مع الضغط والتخطيط؟",
+    essay_o: "لو تقدر تخترع مادة جديدة تدرس في المدارس مش موجودة دلوقتي، هتكون إيه وليه؟",
+    essay_free: "مساحة حرة (٢٠ دقيقة): اكتب عن أي حاجة في دماغك دلوقتي.",
+    essay_title_c: "الجزء ١: تحليل السلوك",
+    essay_title_o: "الجزء ٢: تحليل الخيال",
+    essay_title_free: "الجزء ٣: مساحة حرة",
+    type_here: "اكتب إجابتك هنا...",
+    syncing: "متزامن",
+    inbox: "صندوق الوارد",
+    welcome_subject: "مرحباً بك في سينترا!",
+    auth_note: "ملاحظة: تم التوثيق عبر جلسة آمنة.",
+    task_auto_added: "تم إضافة:",
+    task_auto_updated: "تم تعديل:"
+  }
 };
 
 // --- MOCK SJT DATA ---
@@ -81,16 +197,22 @@ export default function SyntraApp() {
   const isRTL = lang === 'ar';
 
   useEffect(() => {
+    // 1. Initial Auth Check
     const init = async () => {
+      // Check if we have a "Hybrid" login stored
       const storedEmail = localStorage.getItem('syntra_user_email');
       
+      // Ensure Firebase has a user (Anonymous is fine for connectivity)
       if (!auth.currentUser) {
         await signInAnonymously(auth).catch(() => {});
       }
 
       if (storedEmail) {
+        // Restore Session
         const hybridId = getHybridUserId(storedEmail);
         setActiveUserId(hybridId);
+        
+        // Fetch Profile
         try {
           const docRef = doc(db, 'artifacts', appId, 'users', hybridId, 'data', 'profile');
           const snap = await getDoc(docRef);
@@ -114,21 +236,25 @@ export default function SyntraApp() {
 
   const handleLoginSuccess = async (email) => {
     setLoading(true);
+    // Ensure Firebase access
     if (!auth.currentUser) await signInAnonymously(auth);
+
     const hybridId = getHybridUserId(email);
-    localStorage.setItem('syntra_user_email', email);
+    localStorage.setItem('syntra_user_email', email); // PERSIST SESSION
     setActiveUserId(hybridId);
-    
+
+    // Check if profile exists
     try {
       const docRef = doc(db, 'artifacts', appId, 'users', hybridId, 'data', 'profile');
       const snap = await getDoc(docRef);
+      
       if (snap.exists()) {
         setUserProfile(snap.data());
         setView('dashboard');
       } else {
         setView('onboarding');
       }
-    } catch(e) {
+    } catch (e) {
       console.error(e);
       setView('onboarding');
     }
@@ -138,6 +264,7 @@ export default function SyntraApp() {
   const handleProfileComplete = async (profileData) => {
     if (!activeUserId) return;
     try {
+      // 1. Save Profile
       await setDoc(doc(db, 'artifacts', appId, 'users', activeUserId, 'data', 'profile'), {
         ...profileData,
         email: localStorage.getItem('syntra_user_email') || "guest@syntra.ai",
@@ -145,6 +272,7 @@ export default function SyntraApp() {
       });
       setUserProfile(profileData);
       
+      // 2. Generate Welcome Email
       const emailBody = await callGemini(
         `Write a short, professional welcome email for student ${profileData.name}. 
          Mention their traits (C:${profileData.c_score}, O:${profileData.o_score}) are analyzed. Language: ${lang}.`
@@ -165,7 +293,7 @@ export default function SyntraApp() {
 
   const handleLogout = async () => {
     localStorage.removeItem('syntra_user_email');
-    await signOut(auth);
+    await signOut(auth); // This triggers onAuthStateChanged cleanup
     setActiveUserId(null);
     setUserProfile(null);
     setView('auth');
@@ -221,13 +349,34 @@ const AuthScreen = ({ t, onLogin }) => {
     setError('');
     setIsLoading(true);
     
+    // Basic Validation
     if (!email.includes('@')) { setError(t.email + " invalid."); setIsLoading(false); return; }
     if (password.length < 6) { setError("Password too short."); setIsLoading(false); return; }
 
-    // Use Hybrid Auth
-    setTimeout(() => {
+    try {
+        if (isLogin) {
+            await signInWithEmailAndPassword(getAuth(), email, password);
+        } else {
+            await createUserWithEmailAndPassword(getAuth(), email, password);
+        }
         onLogin(email);
-    }, 1000); 
+    } catch (err) {
+        console.error("Auth Error:", err);
+        if (err.code === 'auth/operation-not-allowed') {
+             // Fallback for previews only, but in PROD this means console is not configured
+             setError("Email/Password not enabled in Firebase Console.");
+        } else if (err.code === 'auth/admin-restricted-operation') {
+             setError("Please enable Email/Password in Firebase Console -> Authentication.");
+        } else if (err.code === 'auth/email-already-in-use') {
+            setError("Account exists. Log in.");
+        } else if (err.code === 'auth/invalid-credential') {
+            setError("Invalid credentials.");
+        } else {
+            setError("Login failed. Check console.");
+        }
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   const handleGuest = async () => {
@@ -237,7 +386,13 @@ const AuthScreen = ({ t, onLogin }) => {
         const guestId = "guest_" + Math.random().toString(36).substr(2, 9);
         onLogin(guestId);
     } catch (e) {
-        setError("Guest access failed");
+        console.error(e);
+        if (e.code === 'auth/admin-restricted-operation') {
+            setError("Enable Anonymous Auth in Firebase Console.");
+        } else {
+            setError("Guest access failed");
+        }
+    } finally {
         setIsLoading(false);
     }
   };
@@ -434,6 +589,7 @@ const ChatModule = ({ t, userId, lang, profile, appId }) => {
   const [currentTasks, setCurrentTasks] = useState([]);
   const scrollRef = useRef(null);
 
+  // Load Chat History (Real Persistence)
   useEffect(() => {
     if(!userId) return;
     const q = query(collection(db, 'artifacts', appId, 'users', userId, 'chat'));
@@ -445,6 +601,7 @@ const ChatModule = ({ t, userId, lang, profile, appId }) => {
     return () => unsub();
   }, [userId]);
 
+  // Fetch Tasks for Context Awareness
   useEffect(() => {
     if(!userId) return;
     const q = query(collection(db, 'artifacts', appId, 'users', userId, 'tasks'));
@@ -463,61 +620,94 @@ const ChatModule = ({ t, userId, lang, profile, appId }) => {
     setInput('');
     setLoading(true);
 
+    // 1. Save User Message
     await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
         role: 'user', text, createdAt: serverTimestamp()
     });
 
+    // 2. Prepare Context for BIG-5 Model
     const taskListString = currentTasks.map(t => `- ${t.text} (ID: ${t.id})`).join('\n');
     const systemPrompt = `
       IDENTITY: You are "Aura", a sophisticated AI mentor using the BIG-5 personality model.
-      USER CONTEXT: Name: ${profile.name}, Age: ${profile.age}, C:${profile.c_score}, O:${profile.o_score}.
-      CURRENT TASKS: ${taskListString}
+      
+      USER CONTEXT:
+      - Name: ${profile.name}
+      - Age: ${profile.age}
+      - Trait C (Conscientiousness): ${profile.c_score}/100
+      - Trait O (Openness): ${profile.o_score}/100
+      - Essays (Phase 1 Data): 
+         * C-Essay: "${profile.c_essay || 'N/A'}"
+         * O-Essay: "${profile.o_essay || 'N/A'}"
+      
+      CURRENT TASKS LIST:
+      ${taskListString}
+
       INSTRUCTIONS:
-      1. Speak ONLY in Egyptian Arabic (Masri). Use slang.
-      2. If user mentions a task:
-         - If it REFINES an existing task (e.g. "Study" -> "Study Math"), return [MOD: old_task -> new_task].
-         - If it's NEW, return [ADD: task_text].
-         - If existing task matches, DO NOT add duplicate.
+      1. LANGUAGE: Speak ONLY in authentic **Egyptian Arabic** (Masri). Use slang like "يا صاحبي", "يا بطل", "عاش", "فكك من".
+      2. PERSONALITY:
+         - If High C: Be organized, strict, focused on deadlines.
+         - If High O: Be creative, open-minded, encourage exploration.
+      3. TASK INTELLIGENCE (CRITICAL):
+         - If the user wants to add a task that is a refinement or duplicate of an existing task (e.g., "Study" -> "Study Math"), DO NOT add a new task. Instead, generate a [MOD: old_task_text -> new_task_text] tag.
+         - If it is a completely new task, generate a [ADD: task_text] tag.
+         - Keep response short and helpful.
     `;
 
+    // 3. Call AI
     const aiRaw = await callGemini(text, systemPrompt);
+    
+    // 4. Parse & Execute Smart Actions
     let aiText = aiRaw;
     
+    // Check for Updates [MOD: old -> new]
     const modMatch = aiRaw.match(/\[MOD:\s*(.*?)\s*->\s*(.*?)\]/);
     if (modMatch) {
         const oldText = modMatch[1].trim();
         const newText = modMatch[2].trim();
         aiText = aiRaw.replace(/\[MOD:.*?\]/, "").trim(); 
-        const targetTask = currentTasks.find(t => t.text.includes(oldText));
+        
+        // Find task to update (Fuzzy match logic)
+        const targetTask = currentTasks.find(t => t.text.includes(oldText) || oldText.includes(t.text));
         if (targetTask) {
             await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'tasks', targetTask.id), { text: newText });
             aiText += `\n(✓ ${t.task_auto_updated} ${newText})`;
         } else {
-            await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), { text: newText, done: false, type: 'ai-smart', createdAt: serverTimestamp() });
+            // Fallback if not found: Add as new
+            await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), {
+                text: newText, done: false, type: 'ai-smart', createdAt: serverTimestamp()
+            });
             aiText += `\n(✓ ${t.task_auto_added} ${newText})`;
         }
     }
 
+    // Check for Adds [ADD: new]
     const addMatch = aiRaw.match(/\[ADD:\s*(.*?)\]/);
     if (addMatch) {
         const newText = addMatch[1].trim();
         aiText = aiRaw.replace(/\[ADD:.*?\]/, "").trim();
+        
+        // Check if exact duplicate exists before adding
         const isDuplicate = currentTasks.some(t => t.text.toLowerCase() === newText.toLowerCase());
         if (!isDuplicate) {
-            await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), { text: newText, done: false, type: 'ai-smart', createdAt: serverTimestamp() });
+            await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), {
+                text: newText, done: false, type: 'ai-smart', createdAt: serverTimestamp()
+            });
             aiText += `\n(✓ ${t.task_auto_added} ${newText})`;
         }
     }
 
+    // 5. Save AI Message
     await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
         role: 'ai', text: aiText, createdAt: serverTimestamp()
     });
+    
     setLoading(false);
   };
 
   return (
     <div className="h-full flex flex-col bg-slate-50/50">
        <div className="flex-1 overflow-y-auto p-8 space-y-6">
+          {msgs.length === 0 && <div className="text-center text-slate-400 mt-20 opacity-50">{t.chat_placeholder}</div>}
           {msgs.map((m) => (
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
               <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'}`}>{m.text}</div>
@@ -542,8 +732,8 @@ const PlannerModule = ({ t, userId, lang, profile, appId }) => {
   useEffect(() => {
     if(!userId) return;
     const q = query(collection(db, 'artifacts', appId, 'users', userId, 'tasks'));
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setTasks(data);
     });
