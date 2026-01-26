@@ -38,7 +38,7 @@ import {
 // 1. GEMINI API KEY
 // IMPORTANT: For Vercel Deployment, UNCOMMENT the line below and DELETE the empty string line.
 // const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
-const apiKey = ""; // Placeholder to prevent preview crash. Replace this line for Vercel.
+const apiKey = "AIzaSyAnLsbC_xqGAh-XnRcHw8kyTD8B_GX0_Vw"; // <--- Paste your Gemini API Key inside these quotes
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = {
@@ -50,6 +50,7 @@ const firebaseConfig = {
   appId: "1:858952912964:web:eef39b1b848a0090af2c11",
   measurementId: "G-P3G12J3TTE"
 };
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -87,9 +88,9 @@ const getHybridUserId = (email) => {
 
 // --- GEMINI API HELPER ---
 const callGemini = async (prompt, systemInstruction = "") => {
-  if (!apiKey) {
-      console.warn("Gemini API Key is missing.");
-      return "AI is currently offline (Key Missing).";
+  if (!apiKey || apiKey.includes("PASTE_YOUR")) {
+      console.warn("Gemini API Key is missing or invalid.");
+      return "AI is currently offline (Key Missing). Please update the code with your API Key.";
   }
   try {
     const response = await fetch(
