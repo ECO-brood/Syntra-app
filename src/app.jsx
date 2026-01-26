@@ -40,18 +40,18 @@ import {
 // 1. GEMINI API KEY
 // IMPORTANT: For Vercel Deployment, UNCOMMENT the line below and DELETE the empty string line.
 // const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
-const apiKey = "PASTE_YOUR_GEMINI_API_KEY_HERE"; // <--- Paste your Gemini API Key inside these quotes
+const apiKey = "AIzaSyAnLsbC_xqGAh-XnRcHw8kyTD8B_GX0_Vw"; // <--- Paste your Gemini API Key inside these quotes
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = {
-  apiKey: "PASTE_YOUR_FIREBASE_API_KEY_HERE",
-  authDomain: "PASTE_YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "PASTE_YOUR_PROJECT_ID",
-  storageBucket: "PASTE_YOUR_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "PASTE_YOUR_SENDER_ID",
-  appId: "PASTE_YOUR_APP_ID"
+  apiKey: "AIzaSyAu3Mwy1E82hS_8n9nfmaxl_ji7XWb5KoM",
+  authDomain: "syntra-9e959.firebaseapp.com",
+  projectId: "syntra-9e959",
+  storageBucket: "syntra-9e959.firebasestorage.app",
+  messagingSenderId: "858952912964",
+  appId: "1:858952912964:web:eef39b1b848a0090af2c11",
+  measurementId: "G-P3G12J3TTE"
 };
-
 // Initialize Firebase with modern persistence settings
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -862,3 +862,4 @@ const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
     </div>
   );
 }
+
