@@ -29,7 +29,8 @@ import {
   getDoc,
   deleteDoc,
   updateDoc,
-  where
+  where,
+  enableIndexedDbPersistence // Import persistence
 } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
@@ -55,6 +56,19 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+// Enable Offline Persistence
+try {
+  enableIndexedDbPersistence(db).catch((err) => {
+      if (err.code == 'failed-precondition') {
+          console.log('Persistence failed: Multiple tabs open.');
+      } else if (err.code == 'unimplemented') {
+          console.log('Persistence not supported by browser.');
+      }
+  });
+} catch (e) {
+  console.log("Persistence initialization error (likely already enabled):", e);
+}
+
 // 3. STATIC APP ID
 const appId = 'syntra-web-v1';
 
@@ -74,6 +88,10 @@ const getHybridUserId = (email) => {
 
 // --- GEMINI API HELPER ---
 const callGemini = async (prompt, systemInstruction = "") => {
+  if (!apiKey) {
+      console.warn("Gemini API Key is missing.");
+      return "AI is currently offline (Key Missing).";
+  }
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
@@ -86,10 +104,16 @@ const callGemini = async (prompt, systemInstruction = "") => {
         })
       }
     );
+    
+    if (response.status === 403) {
+        console.error("Gemini API Error 403: Invalid Key or Permissions.");
+        return "AI Error: Access Denied (Check API Key).";
+    }
+
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "System Error: No response.";
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: No response.";
   } catch (error) {
-    console.error("Gemini Error:", error);
+    console.error("Gemini Network Error:", error);
     return "Error: Could not reach AI service.";
   }
 };
@@ -225,7 +249,6 @@ export default function SyntraApp() {
         const hybridId = getHybridUserId(storedEmail);
         setActiveUserId(hybridId);
         
-        // Removed the strict 5s timeout that was causing issues
         try {
           const docRef = doc(db, 'artifacts', appId, 'users', hybridId, 'data', 'profile');
           const snap = await getDoc(docRef);
@@ -289,7 +312,7 @@ export default function SyntraApp() {
     setUserProfile(profileData);
     
     // 2. Try to save to cloud (Fire & Forget)
-    if (activeUserId) {
+    if (activeUserId && !isOffline) {
       try {
         await setDoc(doc(db, 'artifacts', appId, 'users', activeUserId, 'data', 'profile'), {
           ...profileData,
@@ -385,6 +408,7 @@ const AuthScreen = ({ t, onLogin }) => {
     setError('');
     setIsLoading(true);
     
+    // Basic Validation
     if (!email.includes('@')) { setError(t.email + " invalid."); setIsLoading(false); return; }
     if (password.length < 6) { setError("Password too short."); setIsLoading(false); return; }
 
