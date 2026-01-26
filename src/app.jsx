@@ -30,7 +30,9 @@ import {
   deleteDoc,
   updateDoc,
   where,
-  enableIndexedDbPersistence // Import persistence
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager
 } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
@@ -38,36 +40,26 @@ import {
 // 1. GEMINI API KEY
 // IMPORTANT: For Vercel Deployment, UNCOMMENT the line below and DELETE the empty string line.
 // const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
-const apiKey = "AIzaSyAnLsbC_xqGAh-XnRcHw8kyTD8B_GX0_Vw"; // <--- Paste your Gemini API Key inside these quotes
+const apiKey = "PASTE_YOUR_GEMINI_API_KEY_HERE"; // <--- Paste your Gemini API Key inside these quotes
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = {
-  apiKey: "AIzaSyAu3Mwy1E82hS_8n9nfmaxl_ji7XWb5KoM",
-  authDomain: "syntra-9e959.firebaseapp.com",
-  projectId: "syntra-9e959",
-  storageBucket: "syntra-9e959.firebasestorage.app",
-  messagingSenderId: "858952912964",
-  appId: "1:858952912964:web:eef39b1b848a0090af2c11",
-  measurementId: "G-P3G12J3TTE"
+  apiKey: "PASTE_YOUR_FIREBASE_API_KEY_HERE",
+  authDomain: "PASTE_YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "PASTE_YOUR_PROJECT_ID",
+  storageBucket: "PASTE_YOUR_PROJECT_ID.firebasestorage.app",
+  messagingSenderId: "PASTE_YOUR_SENDER_ID",
+  appId: "PASTE_YOUR_APP_ID"
 };
 
-// Initialize Firebase
+// Initialize Firebase with modern persistence settings
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
-
-// Enable Offline Persistence
-try {
-  enableIndexedDbPersistence(db).catch((err) => {
-      if (err.code == 'failed-precondition') {
-          console.log('Persistence failed: Multiple tabs open.');
-      } else if (err.code == 'unimplemented') {
-          console.log('Persistence not supported by browser.');
-      }
-  });
-} catch (e) {
-  console.log("Persistence initialization error (likely already enabled):", e);
-}
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+});
 
 // 3. STATIC APP ID
 const appId = 'syntra-web-v1';
@@ -106,7 +98,7 @@ const callGemini = async (prompt, systemInstruction = "") => {
     );
     
     if (response.status === 403) {
-        console.error("Gemini API Error 403: Invalid Key or Permissions.");
+        console.error("Gemini API Error 403: Permission Denied. Please check if the API key is correct and the Generative Language API is enabled in Google Cloud Console.");
         return "AI Error: Access Denied (Check API Key).";
     }
 
