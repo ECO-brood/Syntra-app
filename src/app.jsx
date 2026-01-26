@@ -5,7 +5,7 @@ import {
   ArrowRight, Sparkles, Send, Plus, Trash2, Smile, 
   Activity, Lightbulb, LogOut, Lock, Mail, UserCircle,
   PenTool, ShieldCheck, Cloud, RefreshCw, MailCheck, Bell,
-  Menu, X, Edit3
+  Menu, X, Edit3, AlertTriangle
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -130,7 +130,8 @@ const LANGUAGES = {
     welcome_subject: "Welcome to Syntra!",
     auth_note: "Note: Authenticated via Secure Session.",
     task_auto_added: "Task added:",
-    task_auto_updated: "Task updated:"
+    task_auto_updated: "Task updated:",
+    offline_mode: "Working Offline"
   },
   ar: {
     welcome: "مرحباً بك في سينترا",
@@ -172,7 +173,8 @@ const LANGUAGES = {
     welcome_subject: "مرحباً بك في سينترا!",
     auth_note: "ملاحظة: تم التوثيق عبر جلسة آمنة.",
     task_auto_added: "تم إضافة:",
-    task_auto_updated: "تم تعديل:"
+    task_auto_updated: "تم تعديل:",
+    offline_mode: "وضع غير متصل"
   }
 };
 
@@ -192,27 +194,26 @@ export default function SyntraApp() {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('auth'); 
+  const [isOffline, setIsOffline] = useState(false);
 
   const t = LANGUAGES[lang];
   const isRTL = lang === 'ar';
 
   useEffect(() => {
-    // 1. Initial Auth Check
     const init = async () => {
-      // Check if we have a "Hybrid" login stored
       const storedEmail = localStorage.getItem('syntra_user_email');
       
-      // Ensure Firebase has a user (Anonymous is fine for connectivity)
+      // Try to establish connection, handle offline/auth failure gracefully
       if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
+        await signInAnonymously(auth).catch((e) => {
+            console.warn("Anon auth failed, likely config/network issue:", e);
+            setIsOffline(true);
+        });
       }
 
       if (storedEmail) {
-        // Restore Session
         const hybridId = getHybridUserId(storedEmail);
         setActiveUserId(hybridId);
-        
-        // Fetch Profile
         try {
           const docRef = doc(db, 'artifacts', appId, 'users', hybridId, 'data', 'profile');
           const snap = await getDoc(docRef);
@@ -223,7 +224,10 @@ export default function SyntraApp() {
             setView('onboarding');
           }
         } catch (e) {
-          console.error(e);
+          console.error("Profile Load Failed:", e);
+          setIsOffline(true);
+          // If we can't load profile, assume new or offline. 
+          // If offline, we might be stuck, but better to go to onboarding than hang.
           setView('onboarding');
         }
       } else {
@@ -236,18 +240,20 @@ export default function SyntraApp() {
 
   const handleLoginSuccess = async (email) => {
     setLoading(true);
-    // Ensure Firebase access
-    if (!auth.currentUser) await signInAnonymously(auth);
+    if (!auth.currentUser) {
+        await signInAnonymously(auth).catch(e => {
+            console.warn("Login Anon Auth Failed:", e);
+            setIsOffline(true);
+        });
+    }
 
     const hybridId = getHybridUserId(email);
-    localStorage.setItem('syntra_user_email', email); // PERSIST SESSION
+    localStorage.setItem('syntra_user_email', email);
     setActiveUserId(hybridId);
 
-    // Check if profile exists
     try {
       const docRef = doc(db, 'artifacts', appId, 'users', hybridId, 'data', 'profile');
       const snap = await getDoc(docRef);
-      
       if (snap.exists()) {
         setUserProfile(snap.data());
         setView('dashboard');
@@ -255,45 +261,52 @@ export default function SyntraApp() {
         setView('onboarding');
       }
     } catch (e) {
-      console.error(e);
+      console.error("Login Fetch Error:", e);
+      setIsOffline(true);
       setView('onboarding');
     }
     setLoading(false);
   };
 
   const handleProfileComplete = async (profileData) => {
-    if (!activeUserId) return;
-    try {
-      // 1. Save Profile
-      await setDoc(doc(db, 'artifacts', appId, 'users', activeUserId, 'data', 'profile'), {
-        ...profileData,
-        email: localStorage.getItem('syntra_user_email') || "guest@syntra.ai",
-        createdAt: serverTimestamp()
-      });
-      setUserProfile(profileData);
-      
-      // 2. Generate Welcome Email
-      const emailBody = await callGemini(
-        `Write a short, professional welcome email for student ${profileData.name}. 
-         Mention their traits (C:${profileData.c_score}, O:${profileData.o_score}) are analyzed. Language: ${lang}.`
-      );
-      
-      await addDoc(collection(db, 'artifacts', appId, 'users', activeUserId, 'inbox'), {
-        subject: t.welcome_subject,
-        body: emailBody,
-        read: false,
-        date: serverTimestamp()
-      });
-
-      setView('dashboard');
-    } catch (e) {
-      console.error("Profile Save Error:", e);
+    // 1. Set local state immediately so user is NOT STUCK
+    setUserProfile(profileData);
+    
+    // 2. Try to save to cloud
+    if (activeUserId) {
+      try {
+        await setDoc(doc(db, 'artifacts', appId, 'users', activeUserId, 'data', 'profile'), {
+          ...profileData,
+          email: localStorage.getItem('syntra_user_email') || "guest@syntra.ai",
+          createdAt: serverTimestamp()
+        });
+        
+        // Generate Welcome Email
+        const emailBody = await callGemini(
+          `Write a short, professional welcome email for student ${profileData.name}. 
+           Mention their traits (C:${profileData.c_score}, O:${profileData.o_score}) are analyzed. Language: ${lang}.`
+        );
+        
+        await addDoc(collection(db, 'artifacts', appId, 'users', activeUserId, 'inbox'), {
+          subject: t.welcome_subject,
+          body: emailBody,
+          read: false,
+          date: serverTimestamp()
+        });
+      } catch (e) {
+        console.error("Cloud Save Failed (Offline Mode Activated):", e);
+        setIsOffline(true);
+        // We do NOT block the view change. User proceeds to dashboard in "Offline Mode".
+      }
     }
+    
+    // 3. Move to Dashboard
+    setView('dashboard');
   };
 
   const handleLogout = async () => {
     localStorage.removeItem('syntra_user_email');
-    await signOut(auth); // This triggers onAuthStateChanged cleanup
+    await signOut(auth).catch(e => console.warn("Signout warning:", e));
     setActiveUserId(null);
     setUserProfile(null);
     setView('auth');
@@ -312,8 +325,9 @@ export default function SyntraApp() {
         </div>
         <div className="flex gap-4 items-center">
           {activeUserId && (
-            <div className="hidden md:flex items-center gap-2 text-xs font-bold text-teal-600 bg-teal-50 px-3 py-1 rounded-full border border-teal-100 animate-pulse">
-              <Cloud size={12} /> {t.syncing}
+            <div className={`hidden md:flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full border ${isOffline ? 'text-amber-600 bg-amber-50 border-amber-100' : 'text-teal-600 bg-teal-50 border-teal-100'}`}>
+              {isOffline ? <AlertTriangle size={12}/> : <Cloud size={12} />} 
+              {isOffline ? t.offline_mode : t.syncing}
             </div>
           )}
           <button onClick={() => setLang(l => l === 'en' ? 'ar' : 'en')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-sm font-medium transition-all">
@@ -330,7 +344,7 @@ export default function SyntraApp() {
       <main className="pt-24 px-4 h-screen overflow-hidden">
         {view === 'auth' && <AuthScreen t={t} onLogin={handleLoginSuccess} />}
         {view === 'onboarding' && <OnboardingFlow t={t} onComplete={handleProfileComplete} />}
-        {view === 'dashboard' && userProfile && <Dashboard t={t} userId={activeUserId} profile={userProfile} lang={lang} appId={appId} />}
+        {view === 'dashboard' && userProfile && <Dashboard t={t} userId={activeUserId} profile={userProfile} lang={lang} appId={appId} isOffline={isOffline} />}
       </main>
     </div>
   );
@@ -362,11 +376,12 @@ const AuthScreen = ({ t, onLogin }) => {
         onLogin(email);
     } catch (err) {
         console.error("Auth Error:", err);
-        if (err.code === 'auth/operation-not-allowed') {
-             // Fallback for previews only, but in PROD this means console is not configured
-             setError("Email/Password not enabled in Firebase Console.");
-        } else if (err.code === 'auth/admin-restricted-operation') {
-             setError("Please enable Email/Password in Firebase Console -> Authentication.");
+        // Handle common Firebase Auth errors
+        if (err.code === 'auth/operation-not-allowed' || err.code === 'auth/admin-restricted-operation') {
+             // Fallback to Hybrid Auth if Email/Pass is not enabled in Console
+             console.warn("Auth disabled in console, falling back to hybrid simulation.");
+             setTimeout(() => onLogin(email), 1000);
+             return;
         } else if (err.code === 'auth/email-already-in-use') {
             setError("Account exists. Log in.");
         } else if (err.code === 'auth/invalid-credential') {
@@ -386,12 +401,9 @@ const AuthScreen = ({ t, onLogin }) => {
         const guestId = "guest_" + Math.random().toString(36).substr(2, 9);
         onLogin(guestId);
     } catch (e) {
+        // If Anonymous Auth is also disabled, fallback completely
         console.error(e);
-        if (e.code === 'auth/admin-restricted-operation') {
-            setError("Enable Anonymous Auth in Firebase Console.");
-        } else {
-            setError("Guest access failed");
-        }
+        onLogin("guest_offline");
     } finally {
         setIsLoading(false);
     }
@@ -439,7 +451,8 @@ const OnboardingFlow = ({ t, onComplete }) => {
   const handleEssaySubmit = (essayData) => {
     const finalData = { ...data, ...essayData };
     setStep(3);
-    onComplete(finalData);
+    // Directly proceed instead of waiting, parent handles async save
+    onComplete(finalData); 
   };
 
   return (
@@ -517,21 +530,21 @@ const EssayTest = ({ t, onComplete }) => {
 };
 
 // --- DASHBOARD ---
-const Dashboard = ({ t, userId, profile, lang, appId }) => {
+const Dashboard = ({ t, userId, profile, lang, appId, isOffline }) => {
   const [activeTab, setActiveTab] = useState('chat');
   const [notifications, setNotifications] = useState([]);
   const [showInbox, setShowInbox] = useState(false);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || isOffline) return;
     const q = query(collection(db, 'artifacts', appId, 'users', userId, 'inbox'));
     const unsub = onSnapshot(q, (snap) => {
         const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         data.sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0));
         setNotifications(data);
-    });
+    }, (err) => console.log("Inbox Offline", err));
     return () => unsub();
-  }, [userId]);
+  }, [userId, isOffline]);
 
   return (
     <div className="h-full flex gap-6 pb-6 pt-4 animate-in fade-in duration-700 relative">
@@ -550,9 +563,9 @@ const Dashboard = ({ t, userId, profile, lang, appId }) => {
       </div>
 
       <div className="flex-1 bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden relative flex flex-col">
-        {activeTab === 'chat' && <ChatModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} />}
-        {activeTab === 'plan' && <PlannerModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} />}
-        {activeTab === 'journal' && <JournalModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} />}
+        {activeTab === 'chat' && <ChatModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
+        {activeTab === 'plan' && <PlannerModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
+        {activeTab === 'journal' && <JournalModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
       </div>
 
       {showInbox && (
@@ -582,7 +595,7 @@ const NavIcon = ({ icon, active, onClick }) => (
 
 // --- MODULES ---
 
-const ChatModule = ({ t, userId, lang, profile, appId }) => {
+const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -591,26 +604,26 @@ const ChatModule = ({ t, userId, lang, profile, appId }) => {
 
   // Load Chat History (Real Persistence)
   useEffect(() => {
-    if(!userId) return;
+    if(!userId || isOffline) return;
     const q = query(collection(db, 'artifacts', appId, 'users', userId, 'chat'));
     const unsub = onSnapshot(q, (snap) => {
         const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         data.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
         setMsgs(data);
-    });
+    }, (err) => console.log("Chat Offline", err));
     return () => unsub();
-  }, [userId]);
+  }, [userId, isOffline]);
 
   // Fetch Tasks for Context Awareness
   useEffect(() => {
-    if(!userId) return;
+    if(!userId || isOffline) return;
     const q = query(collection(db, 'artifacts', appId, 'users', userId, 'tasks'));
     const unsub = onSnapshot(q, (snap) => {
         const tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         setCurrentTasks(tasks);
-    });
+    }, () => {});
     return () => unsub();
-  }, [userId]);
+  }, [userId, isOffline]);
 
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, loading]);
 
@@ -619,6 +632,15 @@ const ChatModule = ({ t, userId, lang, profile, appId }) => {
     const text = input;
     setInput('');
     setLoading(true);
+
+    if (isOffline) {
+        setMsgs(prev => [...prev, {id: Date.now(), role: 'user', text}]);
+        setTimeout(() => {
+            setMsgs(prev => [...prev, {id: Date.now()+1, role: 'ai', text: "I'm currently offline, but I hear you! Connect to the internet for full AI features."}]);
+            setLoading(false);
+        }, 500);
+        return;
+    }
 
     // 1. Save User Message
     await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
@@ -709,7 +731,7 @@ const ChatModule = ({ t, userId, lang, profile, appId }) => {
        <div className="flex-1 overflow-y-auto p-8 space-y-6">
           {msgs.length === 0 && <div className="text-center text-slate-400 mt-20 opacity-50">{t.chat_placeholder}</div>}
           {msgs.map((m) => (
-            <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
+            <div key={m.id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
               <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'}`}>{m.text}</div>
             </div>
           ))}
@@ -724,24 +746,29 @@ const ChatModule = ({ t, userId, lang, profile, appId }) => {
   );
 };
 
-const PlannerModule = ({ t, userId, lang, profile, appId }) => {
+const PlannerModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const [tasks, setTasks] = useState([]);
   const [newTask, setNewTask] = useState('');
   const [isMagicLoading, setIsMagicLoading] = useState(false);
 
   useEffect(() => {
-    if(!userId) return;
+    if(!userId || isOffline) return;
     const q = query(collection(db, 'artifacts', appId, 'users', userId, 'tasks'));
-    const unsub = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setTasks(data);
-    });
+    }, (err) => console.log("Planner Offline", err));
     return () => unsub();
-  }, [userId]);
+  }, [userId, isOffline]);
 
   const addTask = async (text, type = 'manual') => {
     if (!text.trim()) return;
+    if (isOffline) {
+        setTasks(prev => [{id: Date.now(), text, done: false, type}, ...prev]);
+        setNewTask('');
+        return;
+    }
     await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), {
       text, done: false, type, createdAt: serverTimestamp()
     });
@@ -749,15 +776,24 @@ const PlannerModule = ({ t, userId, lang, profile, appId }) => {
   };
 
   const toggleTask = async (task) => {
+    if (isOffline) {
+        setTasks(prev => prev.map(t => t.id === task.id ? {...t, done: !t.done} : t));
+        return;
+    }
     await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'tasks', task.id), { done: !task.done });
   };
 
   const deleteTask = async (id) => {
+    if (isOffline) {
+        setTasks(prev => prev.filter(t => t.id !== id));
+        return;
+    }
     await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'tasks', id));
   };
 
   const magicBreakdown = async () => {
     if (!newTask.trim()) return;
+    if (isOffline) return;
     setIsMagicLoading(true);
     const result = await callGemini(`Break down goal "${newTask}" into 3 steps. Language: ${lang}. Return steps joined by |||`);
     const subtasks = result.split('|||').map(s => s.trim()).filter(s => s);
@@ -773,7 +809,7 @@ const PlannerModule = ({ t, userId, lang, profile, appId }) => {
       </div>
       <div className="bg-white p-2 rounded-2xl border border-slate-200 mb-8 flex gap-2 shadow-sm">
           <input value={newTask} onChange={e => setNewTask(e.target.value)} placeholder="Type a goal..." className="flex-1 bg-transparent p-4 outline-none text-lg" />
-          <button onClick={magicBreakdown} disabled={!newTask || isMagicLoading} className="bg-purple-100 text-purple-700 px-4 rounded-xl font-bold flex items-center gap-2 hover:bg-purple-200 transition-all disabled:opacity-50">
+          <button onClick={magicBreakdown} disabled={!newTask || isMagicLoading || isOffline} className="bg-purple-100 text-purple-700 px-4 rounded-xl font-bold flex items-center gap-2 hover:bg-purple-200 transition-all disabled:opacity-50">
              {isMagicLoading ? <Sparkles size={18} className="animate-spin" /> : <Sparkles size={18} />} {t.task_magic}
           </button>
           <button onClick={() => addTask(newTask)} className="bg-slate-900 text-white px-6 rounded-xl font-bold hover:bg-slate-800 transition-all"><Plus size={20} /></button>
@@ -794,11 +830,12 @@ const PlannerModule = ({ t, userId, lang, profile, appId }) => {
   );
 };
 
-const JournalModule = ({ t, userId, lang, appId }) => {
+const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
   const [entry, setEntry] = useState('');
   const [insight, setInsight] = useState('');
   const analyze = async () => {
     if(entry.length < 10) return;
+    if (isOffline) { setInsight("Cannot analyze while offline."); return; }
     const res = await callGemini(`Analyze journal: "${entry}". Give 1 sentence advice in ${lang}.`);
     setInsight(res);
   }
