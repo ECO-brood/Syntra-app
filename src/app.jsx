@@ -52,7 +52,6 @@ const firebaseConfig = {
   appId: "1:858952912964:web:eef39b1b848a0090af2c11",
   measurementId: "G-P3G12J3TTE"
 };
-
 // Initialize Firebase with FORCE LONG POLLING
 // This bypasses many firewall/browser restrictions that cause "Client Offline" errors.
 const app = initializeApp(firebaseConfig);
@@ -88,7 +87,7 @@ const callGemini = async (prompt, systemInstruction = "") => {
       return "AI is currently offline (Key Missing). Please update the code with your API Key.";
   }
   try {
-    // CHANGED MODEL TO STANDARD PUBLIC MODEL: gemini-1.5-flash
+    // UPDATED ENDPOINT: Use standard gemini-1.5-flash
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
@@ -101,16 +100,21 @@ const callGemini = async (prompt, systemInstruction = "") => {
       }
     );
     
-    if (response.status === 403) {
-        console.error("Gemini API Error 403: Invalid Key or Permissions.");
-        return "AI Error: Access Denied (Check API Key).";
+    if (!response.ok) {
+        // Detailed error logging for debugging
+        const errorData = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
+        console.error("Gemini API Error:", response.status, errorData);
+        
+        if (response.status === 403) return "AI Error: Access Denied (403). Check API Key restrictions.";
+        if (response.status === 404) return "AI Error: Model Not Found (404). Check API endpoint.";
+        return `AI Error: ${response.status} - ${errorData.error?.message || "Unknown"}`;
     }
 
     const data = await response.json();
     return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: No response.";
   } catch (error) {
     console.error("Gemini Network Error:", error);
-    return "Error: Could not reach AI service.";
+    return "Error: Could not reach AI service (Network).";
   }
 };
 
