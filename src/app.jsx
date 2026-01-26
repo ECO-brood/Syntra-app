@@ -52,13 +52,13 @@ const firebaseConfig = {
   appId: "1:858952912964:web:eef39b1b848a0090af2c11",
   measurementId: "G-P3G12J3TTE"
 };
-// Initialize Firebase with modern persistence settings
+
+// Initialize Firebase with FORCE LONG POLLING
+// This bypasses many firewall/browser restrictions that cause "Client Offline" errors.
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
+  experimentalForceLongPolling: true, // <--- CRITICAL FIX FOR "OFFLINE" ERROR
 });
 
 // 3. STATIC APP ID
@@ -98,8 +98,8 @@ const callGemini = async (prompt, systemInstruction = "") => {
     );
     
     if (response.status === 403) {
-        console.error("Gemini API Error 403: Permission Denied. Please check if the API key is correct and the Generative Language API is enabled in Google Cloud Console.");
-        return "AI Error: Access Denied (Check API Key).";
+        console.error("Gemini API Error 403: Access Forbidden. Please check Google AI Studio > Get API Key > API restrictions.");
+        return "AI Error: 403 Forbidden. Check API Key restrictions.";
     }
 
     const data = await response.json();
@@ -862,4 +862,3 @@ const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
     </div>
   );
 }
-
