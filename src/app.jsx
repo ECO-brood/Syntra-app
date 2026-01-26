@@ -31,12 +31,23 @@ import {
 } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
-const apiKey = ""; // Injected by environment
-const firebaseConfig = JSON.parse(__firebase_config);
+
+// 1. Gemini Key (comes from Vercel Environment Variables)
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
+
+// 2. Firebase Config (Paste your specific object here)
+// You get this from Firebase Console -> Project Settings -> General -> Your Apps
+const firebaseConfig = {
+  apiKey: "AIzaSy... (your actual key)",
+  authDomain: "your-project.firebaseapp.com",
+  projectId: "your-project-id",
+  storageBucket: "your-project.firebasestorage.app",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abcdef"
+};
+
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+// ... rest of the code remains the same
 
 // --- HELPER: SIMULATED AUTH ID ---
 const getHybridUserId = (email) => {
@@ -752,4 +763,5 @@ const JournalModule = ({ t, userId, lang, appId }) => {
        {insight && <div className="mt-4 p-6 bg-yellow-50 rounded-3xl border border-yellow-200 text-slate-800 italic">{insight}</div>}
     </div>
   );
+
 }
