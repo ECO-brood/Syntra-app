@@ -5,7 +5,7 @@ import {
   ArrowRight, Sparkles, Send, Plus, Trash2, Smile, 
   Activity, Lightbulb, LogOut, Lock, Mail, UserCircle,
   PenTool, ShieldCheck, Cloud, RefreshCw, MailCheck, Bell,
-  Menu, X, Edit3, AlertTriangle, WifiOff
+  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -32,15 +32,14 @@ import {
   where
 } from 'firebase/firestore';
 
-// --- CONFIGURATION (VERCEL READY) ---
+// --- CONFIGURATION ---
 
 // 1. GEMINI API KEY
-// IMPORTANT: For Vercel Deployment, UNCOMMENT the line below and DELETE the empty string line.
-// const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
-const apiKey = ""; // Placeholder.
+// Uncomment this line for Vercel:
+// const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const apiKey = ""; // Placeholder for local dev.
 
 // 2. FIREBASE CONFIGURATION
-// !!! YOU MUST PASTE YOUR REAL CONFIG HERE !!!
 const firebaseConfig = {
   apiKey: "AIzaSyAu3Mwy1E82hS_8n9nfmaxl_ji7XWb5KoM",
   authDomain: "syntra-9e959.firebaseapp.com",
@@ -50,6 +49,7 @@ const firebaseConfig = {
   appId: "1:858952912964:web:eef39b1b848a0090af2c11",
   measurementId: "G-P3G12J3TTE"
 };
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -58,9 +58,9 @@ const db = getFirestore(app);
 // 3. STATIC APP ID
 const appId = 'syntra-web-v1';
 
-// --- FALLBACK DATA (Prevents White Screen) ---
+// --- FALLBACK DATA ---
 const MOCK_PROFILE = {
-  name: "Guest Student",
+  name: "Student",
   age: "18",
   c_score: 50,
   o_score: 50
@@ -87,10 +87,10 @@ const callGemini = async (prompt, systemInstruction = "") => {
       }
     );
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "معلش، الشبكة مهنجة شوية.";
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || "System Error: No response.";
   } catch (error) {
     console.error("Gemini Error:", error);
-    return "Error: AI Service Unavailable.";
+    return "Error: Could not reach AI service.";
   }
 };
 
@@ -131,13 +131,14 @@ const LANGUAGES = {
     essay_title_o: "Part 2: Imagination Analysis",
     essay_title_free: "Part 3: Free Association",
     type_here: "Type your response here...",
-    syncing: "Cloud Sync",
+    syncing: "Online",
     inbox: "Inbox",
     welcome_subject: "Welcome to Syntra!",
     auth_note: "Note: Authenticated via Secure Session.",
     task_auto_added: "Task added:",
     task_auto_updated: "Task updated:",
-    offline_mode: "Offline Mode",
+    offline_mode: "Offline",
+    reconnect: "Retry",
     connect_error: "Connection Issue"
   },
   ar: {
@@ -175,13 +176,14 @@ const LANGUAGES = {
     essay_title_o: "الجزء ٢: تحليل الخيال",
     essay_title_free: "الجزء ٣: مساحة حرة",
     type_here: "اكتب إجابتك هنا...",
-    syncing: "متزامن",
+    syncing: "متصل",
     inbox: "صندوق الوارد",
     welcome_subject: "مرحباً بك في سينترا!",
     auth_note: "ملاحظة: تم التوثيق عبر جلسة آمنة.",
     task_auto_added: "تم إضافة:",
     task_auto_updated: "تم تعديل:",
-    offline_mode: "وضع غير متصل",
+    offline_mode: "غير متصل",
+    reconnect: "إعادة المحاولة",
     connect_error: "مشكلة في الاتصال"
   }
 };
@@ -223,24 +225,22 @@ export default function SyntraApp() {
         const hybridId = getHybridUserId(storedEmail);
         setActiveUserId(hybridId);
         
-        // TIMEOUT RACE: If Firestore takes > 5s, fail to offline mode
-        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000));
-        
+        // Removed the strict 5s timeout that was causing issues
         try {
           const docRef = doc(db, 'artifacts', appId, 'users', hybridId, 'data', 'profile');
-          // Race between fetching data and 5s timeout
-          const snap = await Promise.race([getDoc(docRef), timeout]);
+          const snap = await getDoc(docRef);
           
           if (snap.exists()) {
             setUserProfile(snap.data());
             setView('dashboard');
+            setIsOffline(false);
           } else {
             setView('onboarding');
           }
         } catch (e) {
-          console.error("Init Error or Timeout:", e);
+          console.error("Init Error:", e);
           setIsOffline(true);
-          // FALLBACK: If we have an email but can't reach DB, show mock profile to avoid white screen
+          // FALLBACK: Load MOCK PROFILE only on error so user can still see UI
           setUserProfile(MOCK_PROFILE); 
           setView('dashboard');
         }
@@ -254,6 +254,8 @@ export default function SyntraApp() {
 
   const handleLoginSuccess = async (email) => {
     setLoading(true);
+    setIsOffline(false);
+    
     if (!auth.currentUser) {
         await signInAnonymously(auth).catch(() => setIsOffline(true));
     }
@@ -262,11 +264,9 @@ export default function SyntraApp() {
     localStorage.setItem('syntra_user_email', email);
     setActiveUserId(hybridId);
 
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000));
-
     try {
       const docRef = doc(db, 'artifacts', appId, 'users', hybridId, 'data', 'profile');
-      const snap = await Promise.race([getDoc(docRef), timeout]);
+      const snap = await getDoc(docRef);
       
       if (snap.exists()) {
         setUserProfile(snap.data());
@@ -277,18 +277,19 @@ export default function SyntraApp() {
     } catch (e) {
       console.error("Login Error:", e);
       setIsOffline(true);
-      // Fallback to onboarding if connection fails during login (safer assumption than dashboard)
-      setView('onboarding');
+      // Try to load dashboard anyway with fallback if error
+      setUserProfile(MOCK_PROFILE);
+      setView('dashboard');
     }
     setLoading(false);
   };
 
   const handleProfileComplete = async (profileData) => {
-    // 1. Set local state immediately so user is NOT STUCK
+    // 1. Set local state immediately
     setUserProfile(profileData);
     
     // 2. Try to save to cloud (Fire & Forget)
-    if (activeUserId && !isOffline) {
+    if (activeUserId) {
       try {
         await setDoc(doc(db, 'artifacts', appId, 'users', activeUserId, 'data', 'profile'), {
           ...profileData,
@@ -308,13 +309,11 @@ export default function SyntraApp() {
           read: false,
           date: serverTimestamp()
         });
+        setIsOffline(false);
       } catch (e) {
         console.error("Cloud Save Failed:", e);
         setIsOffline(true);
       }
-    } else {
-        console.log("Offline mode: Skipping cloud save.");
-        setIsOffline(true);
     }
     
     // 3. Move to Dashboard immediately
@@ -327,6 +326,12 @@ export default function SyntraApp() {
     setActiveUserId(null);
     setUserProfile(null);
     setView('auth');
+  };
+
+  const forceReconnect = () => {
+    setIsOffline(false);
+    // Reload current view logic implicitly by state change or could trigger re-fetch
+    window.location.reload(); 
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50"><Activity className="animate-spin text-teal-600" size={40} /></div>;
@@ -342,10 +347,10 @@ export default function SyntraApp() {
         </div>
         <div className="flex gap-4 items-center">
           {activeUserId && (
-            <div className={`hidden md:flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full border ${isOffline ? 'text-amber-600 bg-amber-50 border-amber-100' : 'text-teal-600 bg-teal-50 border-teal-100'}`}>
+            <button onClick={forceReconnect} className={`hidden md:flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full border ${isOffline ? 'text-amber-600 bg-amber-50 border-amber-100 hover:bg-amber-100' : 'text-teal-600 bg-teal-50 border-teal-100'}`}>
               {isOffline ? <WifiOff size={12}/> : <Cloud size={12} />} 
-              {isOffline ? t.offline_mode : t.syncing}
-            </div>
+              {isOffline ? t.reconnect : t.syncing}
+            </button>
           )}
           <button onClick={() => setLang(l => l === 'en' ? 'ar' : 'en')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-sm font-medium transition-all">
             <Globe size={16} /> {lang === 'en' ? 'العربية' : 'English'}
@@ -361,7 +366,7 @@ export default function SyntraApp() {
       <main className="pt-24 px-4 h-screen overflow-hidden">
         {view === 'auth' && <AuthScreen t={t} onLogin={handleLoginSuccess} />}
         {view === 'onboarding' && <OnboardingFlow t={t} onComplete={handleProfileComplete} />}
-        {view === 'dashboard' && userProfile && <Dashboard t={t} userId={activeUserId} profile={userProfile} lang={lang} appId={appId} isOffline={isOffline} />}
+        {view === 'dashboard' && userProfile && <Dashboard t={t} userId={activeUserId} profile={userProfile} lang={lang} appId={appId} isOffline={isOffline} setIsOffline={setIsOffline} />}
       </main>
     </div>
   );
@@ -380,12 +385,10 @@ const AuthScreen = ({ t, onLogin }) => {
     setError('');
     setIsLoading(true);
     
-    // Basic Validation
     if (!email.includes('@')) { setError(t.email + " invalid."); setIsLoading(false); return; }
     if (password.length < 6) { setError("Password too short."); setIsLoading(false); return; }
 
     try {
-        // Try real auth first
         if (isLogin) {
             await signInWithEmailAndPassword(getAuth(), email, password);
         } else {
@@ -394,14 +397,14 @@ const AuthScreen = ({ t, onLogin }) => {
         onLogin(email);
     } catch (err) {
         console.error("Auth Error:", err);
-        // Robust Error Handling / Fallback Logic
+        // Fallback for demo environments
         if (err.code === 'auth/operation-not-allowed' || err.code === 'auth/admin-restricted-operation') {
              console.warn("Auth disabled, using simulation.");
-             setTimeout(() => onLogin(email), 1000); // Simulate login if auth is disabled (Preview Mode)
+             setTimeout(() => onLogin(email), 1000); 
              return;
         } else if (err.code === 'auth/email-already-in-use') {
             setError("Account exists. Log in.");
-        } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+        } else if (err.code === 'auth/invalid-credential') {
             setError("Invalid credentials.");
         } else {
             setError("Login failed. Check console.");
@@ -418,8 +421,7 @@ const AuthScreen = ({ t, onLogin }) => {
         const guestId = "guest_" + Math.random().toString(36).substr(2, 9);
         onLogin(guestId);
     } catch (e) {
-        console.error("Guest Auth Failed:", e);
-        // Fallback for strict offline environments
+        // Strict fallback for no-auth environments
         onLogin("guest_offline");
     } finally {
         setIsLoading(false);
@@ -547,7 +549,7 @@ const EssayTest = ({ t, onComplete }) => {
 };
 
 // --- DASHBOARD ---
-const Dashboard = ({ t, userId, profile, lang, appId, isOffline }) => {
+const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline }) => {
   const [activeTab, setActiveTab] = useState('chat');
   const [notifications, setNotifications] = useState([]);
   const [showInbox, setShowInbox] = useState(false);
@@ -559,7 +561,10 @@ const Dashboard = ({ t, userId, profile, lang, appId, isOffline }) => {
         const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         data.sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0));
         setNotifications(data);
-    }, (err) => console.log("Inbox Offline", err));
+    }, (err) => {
+        console.log("Inbox Offline", err);
+        setIsOffline(true);
+    });
     return () => unsub();
   }, [userId, isOffline]);
 
@@ -576,7 +581,7 @@ const Dashboard = ({ t, userId, profile, lang, appId, isOffline }) => {
                 {notifications.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>}
             </button>
          </div>
-         <div className="mb-2"><div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-bold border border-teal-200">{profile.name[0]}</div></div>
+         <div className="mb-2"><div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-bold border border-teal-200">{profile?.name?.[0] || "U"}</div></div>
       </div>
 
       <div className="flex-1 bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden relative flex flex-col">
@@ -650,95 +655,69 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     setInput('');
     setLoading(true);
 
-    if (isOffline) {
-        setMsgs(prev => [...prev, {id: Date.now(), role: 'user', text}]);
-        setTimeout(() => {
-            setMsgs(prev => [...prev, {id: Date.now()+1, role: 'ai', text: "I'm currently offline, but I hear you! Connect to the internet for full AI features."}]);
-            setLoading(false);
-        }, 500);
-        return;
-    }
-
-    // 1. Save User Message
-    await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
-        role: 'user', text, createdAt: serverTimestamp()
-    });
-
-    // 2. Prepare Context for BIG-5 Model
-    const taskListString = currentTasks.map(t => `- ${t.text} (ID: ${t.id})`).join('\n');
-    const systemPrompt = `
-      IDENTITY: You are "Aura", a sophisticated AI mentor using the BIG-5 personality model.
-      
-      USER CONTEXT:
-      - Name: ${profile.name}
-      - Age: ${profile.age}
-      - Trait C (Conscientiousness): ${profile.c_score}/100
-      - Trait O (Openness): ${profile.o_score}/100
-      - Essays (Phase 1 Data): 
-         * C-Essay: "${profile.c_essay || 'N/A'}"
-         * O-Essay: "${profile.o_essay || 'N/A'}"
-      
-      CURRENT TASKS LIST:
-      ${taskListString}
-
-      INSTRUCTIONS:
-      1. LANGUAGE: Speak ONLY in authentic **Egyptian Arabic** (Masri). Use slang like "يا صاحبي", "يا بطل", "عاش", "فكك من".
-      2. PERSONALITY:
-         - If High C: Be organized, strict, focused on deadlines.
-         - If High O: Be creative, open-minded, encourage exploration.
-      3. TASK INTELLIGENCE (CRITICAL):
-         - If the user wants to add a task that is a refinement or duplicate of an existing task (e.g., "Study" -> "Study Math"), DO NOT add a new task. Instead, generate a [MOD: old_task_text -> new_task_text] tag.
-         - If it is a completely new task, generate a [ADD: task_text] tag.
-         - Keep response short and helpful.
-    `;
-
-    // 3. Call AI
-    const aiRaw = await callGemini(text, systemPrompt);
-    
-    // 4. Parse & Execute Smart Actions
-    let aiText = aiRaw;
-    
-    // Check for Updates [MOD: old -> new]
-    const modMatch = aiRaw.match(/\[MOD:\s*(.*?)\s*->\s*(.*?)\]/);
-    if (modMatch) {
-        const oldText = modMatch[1].trim();
-        const newText = modMatch[2].trim();
-        aiText = aiRaw.replace(/\[MOD:.*?\]/, "").trim(); 
-        
-        // Find task to update (Fuzzy match logic)
-        const targetTask = currentTasks.find(t => t.text.includes(oldText) || oldText.includes(t.text));
-        if (targetTask) {
-            await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'tasks', targetTask.id), { text: newText });
-            aiText += `\n(✓ ${t.task_auto_updated} ${newText})`;
+    // ALLOW CHAT EVEN IF OFFLINE (Retry Mechanism)
+    try {
+        if (!isOffline) {
+            await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
+                role: 'user', text, createdAt: serverTimestamp()
+            });
         } else {
-            // Fallback if not found: Add as new
-            await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), {
-                text: newText, done: false, type: 'ai-smart', createdAt: serverTimestamp()
-            });
-            aiText += `\n(✓ ${t.task_auto_added} ${newText})`;
+            // Optimistic UI for offline chat
+            setMsgs(prev => [...prev, {id: Date.now(), role: 'user', text}]);
         }
-    }
 
-    // Check for Adds [ADD: new]
-    const addMatch = aiRaw.match(/\[ADD:\s*(.*?)\]/);
-    if (addMatch) {
-        const newText = addMatch[1].trim();
-        aiText = aiRaw.replace(/\[ADD:.*?\]/, "").trim();
+        // Call AI
+        const taskListString = currentTasks.map(t => `- ${t.text} (ID: ${t.id})`).join('\n');
+        const systemPrompt = `
+          IDENTITY: You are "Aura", a sophisticated AI mentor using the BIG-5 personality model.
+          USER CONTEXT: Name: ${profile.name}, Age: ${profile.age}, C:${profile.c_score}, O:${profile.o_score}.
+          CURRENT TASKS: ${taskListString}
+          INSTRUCTIONS:
+          1. Speak ONLY in Egyptian Arabic (Masri). Use slang.
+          2. If user mentions a task:
+             - If it REFINES an existing task (e.g. "Study" -> "Study Math"), return [MOD: old_task -> new_task].
+             - If it's NEW, return [ADD: task_text].
+             - If existing task matches, DO NOT add duplicate.
+        `;
+
+        const aiRaw = await callGemini(text, systemPrompt);
+        let aiText = aiRaw;
         
-        // Check if exact duplicate exists before adding
-        const isDuplicate = currentTasks.some(t => t.text.toLowerCase() === newText.toLowerCase());
-        if (!isDuplicate) {
-            await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), {
-                text: newText, done: false, type: 'ai-smart', createdAt: serverTimestamp()
-            });
-            aiText += `\n(✓ ${t.task_auto_added} ${newText})`;
+        // (Task parsing logic remains the same, but wrapped in try/catch for offline safety)
+        const modMatch = aiRaw.match(/\[MOD:\s*(.*?)\s*->\s*(.*?)\]/);
+        if (modMatch) {
+            const oldText = modMatch[1].trim();
+            const newText = modMatch[2].trim();
+            aiText = aiRaw.replace(/\[MOD:.*?\]/, "").trim(); 
+            const targetTask = currentTasks.find(t => t.text.includes(oldText));
+            if (targetTask && !isOffline) {
+                await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'tasks', targetTask.id), { text: newText });
+                aiText += `\n(✓ ${t.task_auto_updated} ${newText})`;
+            }
         }
-    }
 
-    // 5. Save AI Message
-    await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
-        role: 'ai', text: aiText, createdAt: serverTimestamp()
-    });
+        const addMatch = aiRaw.match(/\[ADD:\s*(.*?)\]/);
+        if (addMatch) {
+            const newText = addMatch[1].trim();
+            aiText = aiRaw.replace(/\[ADD:.*?\]/, "").trim();
+            const isDuplicate = currentTasks.some(t => t.text.toLowerCase() === newText.toLowerCase());
+            if (!isDuplicate && !isOffline) {
+                await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), { text: newText, done: false, type: 'ai-smart', createdAt: serverTimestamp() });
+                aiText += `\n(✓ ${t.task_auto_added} ${newText})`;
+            }
+        }
+
+        if (!isOffline) {
+            await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
+                role: 'ai', text: aiText, createdAt: serverTimestamp()
+            });
+        } else {
+            setMsgs(prev => [...prev, {id: Date.now()+1, role: 'ai', text: aiText}]);
+        }
+
+    } catch (e) {
+        setMsgs(prev => [...prev, {id: Date.now()+2, role: 'ai', text: "Connection failed. Please check internet."}]);
+    }
     
     setLoading(false);
   };
@@ -748,7 +727,7 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
        <div className="flex-1 overflow-y-auto p-8 space-y-6">
           {msgs.length === 0 && <div className="text-center text-slate-400 mt-20 opacity-50">{t.chat_placeholder}</div>}
           {msgs.map((m) => (
-            <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
+            <div key={m.id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
               <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'}`}>{m.text}</div>
             </div>
           ))}
@@ -810,7 +789,6 @@ const PlannerModule = ({ t, userId, lang, profile, appId, isOffline }) => {
 
   const magicBreakdown = async () => {
     if (!newTask.trim()) return;
-    if (isOffline) return;
     setIsMagicLoading(true);
     const result = await callGemini(`Break down goal "${newTask}" into 3 steps. Language: ${lang}. Return steps joined by |||`);
     const subtasks = result.split('|||').map(s => s.trim()).filter(s => s);
@@ -822,11 +800,11 @@ const PlannerModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   return (
     <div className="p-10 h-full overflow-y-auto bg-slate-50/30">
       <div className="flex justify-between items-end mb-8">
-          <div><h2 className="text-3xl font-bold text-slate-800">{t.plan}</h2><p className="text-teal-600 font-medium mt-1">Mode: {profile.c_score > 50 ? "High Structure" : "Flexible Flow"}</p></div>
+          <div><h2 className="text-3xl font-bold text-slate-800">{t.plan}</h2><p className="text-teal-600 font-medium mt-1">Mode: {profile?.c_score > 50 ? "High Structure" : "Flexible Flow"}</p></div>
       </div>
       <div className="bg-white p-2 rounded-2xl border border-slate-200 mb-8 flex gap-2 shadow-sm">
           <input value={newTask} onChange={e => setNewTask(e.target.value)} placeholder="Type a goal..." className="flex-1 bg-transparent p-4 outline-none text-lg" />
-          <button onClick={magicBreakdown} disabled={!newTask || isMagicLoading || isOffline} className="bg-purple-100 text-purple-700 px-4 rounded-xl font-bold flex items-center gap-2 hover:bg-purple-200 transition-all disabled:opacity-50">
+          <button onClick={magicBreakdown} disabled={!newTask || isMagicLoading} className="bg-purple-100 text-purple-700 px-4 rounded-xl font-bold flex items-center gap-2 hover:bg-purple-200 transition-all disabled:opacity-50">
              {isMagicLoading ? <Sparkles size={18} className="animate-spin" /> : <Sparkles size={18} />} {t.task_magic}
           </button>
           <button onClick={() => addTask(newTask)} className="bg-slate-900 text-white px-6 rounded-xl font-bold hover:bg-slate-800 transition-all"><Plus size={20} /></button>
@@ -852,7 +830,6 @@ const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
   const [insight, setInsight] = useState('');
   const analyze = async () => {
     if(entry.length < 10) return;
-    if (isOffline) { setInsight("Cannot analyze while offline."); return; }
     const res = await callGemini(`Analyze journal: "${entry}". Give 1 sentence advice in ${lang}.`);
     setInsight(res);
   }
