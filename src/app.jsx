@@ -38,7 +38,7 @@ import {
 // --- CONFIGURATION ---
 
 // 1. GEMINI API KEY
-// IMPORTANT: For Vercel Deployment, UNCOMMENT the line below and DELETE the empty string line.
+// Ensure this is set in your Vercel Environment Variables as VITE_GEMINI_API_KEY
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
 
 // 2. FIREBASE CONFIGURATION
@@ -51,12 +51,12 @@ const firebaseConfig = {
   appId: "1:858952912964:web:eef39b1b848a0090af2c11",
   measurementId: "G-P3G12J3TTE"
 };
+
 // Initialize Firebase with FORCE LONG POLLING
-// This bypasses many firewall/browser restrictions that cause "Client Offline" errors.
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true, // <--- CRITICAL FIX FOR "OFFLINE" ERROR
+  experimentalForceLongPolling: true, 
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager()
   })
@@ -79,46 +79,67 @@ const getHybridUserId = (email) => {
   return email.toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
 };
 
-// --- GEMINI API HELPER ---
+// --- GEMINI API HELPER (FIXED) ---
 const callGemini = async (prompt, systemInstruction = "") => {
   if (!apiKey || apiKey.includes("PASTE_YOUR")) {
       console.warn("Gemini API Key is missing or invalid.");
-      return "AI is currently offline (Key Missing). Please update the code with your API Key.";
+      return "AI is currently offline (Key Missing). Please check Vercel Environment Variables.";
   }
-  try {
-    // UPDATED ENDPOINT: gemini-1.5-flash (Standard Free Tier Model)
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ 
-            role: "user",
-            parts: [{ text: `${systemInstruction}\n\nUser: ${prompt}` }] 
-          }]
-        })
-      }
-    );
-    
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
-        console.error("Gemini API Error:", response.status, errorData);
-        
-        // Specific Debug Messages
-        if (response.status === 403) return `AI Error: 403 Forbidden. (Check Google Cloud Console -> API Keys -> Restrictions -> Enable 'Generative Language API')`;
-        if (response.status === 404) return `AI Error: 404 Not Found. (Model not available in this region/version)`;
-        if (response.status === 400) return `AI Error: 400 Bad Request. (${errorData.error?.message})`;
-        
-        return `AI Error: ${response.status} - ${errorData.error?.message || "Unknown"}`;
-    }
 
-    const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: No response text.";
-  } catch (error) {
-    console.error("Gemini Network Error:", error);
-    return "Error: Could not reach AI service (Network Blocked?).";
+  // LIST OF MODELS TO TRY (Fallback Strategy)
+  // If 'flash' 404s, it will try 'pro', then '1.0-pro'
+  const models = [
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-pro"
+  ];
+
+  for (const model of models) {
+    try {
+      console.log(`Attempting to connect to model: ${model}...`);
+      
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ 
+              role: "user",
+              parts: [{ text: `${systemInstruction}\n\nUser: ${prompt}` }] 
+            }]
+          })
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: No response text.";
+      }
+
+      // If 404, we continue the loop to the next model
+      if (response.status === 404) {
+        console.warn(`Model ${model} not found (404). Switching to fallback...`);
+        continue; 
+      }
+
+      // If other error, return it immediately
+      const errorData = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
+      if (response.status === 403) return `AI Error: 403 Forbidden. (Check Google Cloud Console -> Enable 'Generative Language API')`;
+      if (response.status === 400) return `AI Error: 400 Bad Request. (${errorData.error?.message})`;
+      
+      return `AI Error: ${response.status} - ${errorData.error?.message || "Unknown"}`;
+
+    } catch (error) {
+      console.error(`Network Error on ${model}:`, error);
+      // If it's the last model and still failing, return error
+      if (model === models[models.length - 1]) {
+        return "Error: Could not reach AI service (Network Blocked?).";
+      }
+    }
   }
+  
+  return "AI Error: All models failed to respond.";
 };
 
 // --- LOCALIZATION ---
@@ -752,14 +773,14 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   return (
     <div className="h-full flex flex-col bg-slate-50/50">
        <div className="flex-1 overflow-y-auto p-8 space-y-6">
-          {msgs.length === 0 && <div className="text-center text-slate-400 mt-20 opacity-50">{t.chat_placeholder}</div>}
-          {msgs.map((m) => (
-            <div key={m.id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
-              <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'}`}>{m.text}</div>
-            </div>
-          ))}
-          {loading && <div className="flex justify-start"><div className="bg-white p-4 rounded-3xl text-slate-400 italic text-sm"><Sparkles size={14} className="animate-spin inline mr-2"/>Aura thinking...</div></div>}
-          <div ref={scrollRef} />
+         {msgs.length === 0 && <div className="text-center text-slate-400 mt-20 opacity-50">{t.chat_placeholder}</div>}
+         {msgs.map((m) => (
+           <div key={m.id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
+             <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'}`}>{m.text}</div>
+           </div>
+         ))}
+         {loading && <div className="flex justify-start"><div className="bg-white p-4 rounded-3xl text-slate-400 italic text-sm"><Sparkles size={14} className="animate-spin inline mr-2"/>Aura thinking...</div></div>}
+         <div ref={scrollRef} />
        </div>
        <div className="p-6 bg-white border-t border-slate-100 flex gap-4">
          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder={t.chat_placeholder} className="flex-1 bg-slate-100 rounded-2xl p-5 outline-none focus:ring-2 focus:ring-teal-500/20 text-lg" />
@@ -872,4 +893,4 @@ const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
        {insight && <div className="mt-4 p-6 bg-yellow-50 rounded-3xl border border-yellow-200 text-slate-800 italic">{insight}</div>}
     </div>
   );
-}
+};
