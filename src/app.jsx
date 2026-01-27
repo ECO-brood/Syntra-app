@@ -5,7 +5,7 @@ import {
   ArrowRight, Sparkles, Send, Plus, Trash2, Smile, 
   Activity, Lightbulb, LogOut, Lock, Mail, UserCircle,
   PenTool, ShieldCheck, Cloud, RefreshCw, MailCheck, Bell,
-  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff, Key
+  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff, Key, Zap
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -38,25 +38,13 @@ import {
 // --- CONFIGURATION ---
 
 // 1. ROBUST API KEY LOADER
-// Tries to find the key in standard variable formats (Vite, Next.js, CRA)
 const getEnvApiKey = () => {
   try {
-    // 1. Local Storage (User Override)
     const localKey = localStorage.getItem('syntra_api_key');
     if (localKey) return localKey;
-
-    // 2. Vite
-    if (import.meta && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-      return import.meta.env.VITE_GEMINI_API_KEY;
-    }
-    // 3. Create React App / Webpack
-    if (process.env.REACT_APP_GEMINI_API_KEY) {
-      return process.env.REACT_APP_GEMINI_API_KEY;
-    }
-    // 4. Next.js
-    if (process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
-      return process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-    }
+    if (import.meta && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) return import.meta.env.VITE_GEMINI_API_KEY;
+    if (process.env.REACT_APP_GEMINI_API_KEY) return process.env.REACT_APP_GEMINI_API_KEY;
+    if (process.env.NEXT_PUBLIC_GEMINI_API_KEY) return process.env.NEXT_PUBLIC_GEMINI_API_KEY;
   } catch (e) {
     console.warn("Environment variable access failed:", e);
   }
@@ -106,21 +94,22 @@ const callGemini = async (prompt, systemInstruction = "") => {
   const apiKey = getEnvApiKey();
 
   if (!apiKey || apiKey.length < 10) {
-      return "KEY_MISSING"; // Special code to trigger UI prompt
+      return "KEY_MISSING";
   }
 
-  const models = [
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-    "gemini-pro"
+  // STRATEGY: Try Flash (v1beta), then Pro (v1beta), then Pro (v1 stable)
+  const attempts = [
+    { model: "gemini-1.5-flash", version: "v1beta" },
+    { model: "gemini-1.5-pro", version: "v1beta" },
+    { model: "gemini-pro", version: "v1" } // STABLE FALLBACK
   ];
 
   let errorLog = [];
 
-  for (const model of models) {
+  for (const { model, version } of attempts) {
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -135,23 +124,25 @@ const callGemini = async (prompt, systemInstruction = "") => {
       
       if (response.ok) {
         const data = await response.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: No response text.";
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: Empty response.";
       }
 
-      errorLog.push(`${model}: ${response.status}`);
+      const status = response.status;
+      errorLog.push(`${model}(${version}): ${status}`);
 
-      if (response.status === 404) continue; // Try next model
+      // If 404, the model doesn't exist for this key/endpoint. Try next.
+      if (status === 404) continue; 
       
       const errorData = await response.json().catch(() => ({}));
-      if (response.status === 403) return "AI Error: 403 Forbidden. Enable API in Google Cloud.";
-      if (response.status === 400) return `AI Error: 400 Bad Request. ${errorData.error?.message || ''}`;
+      if (status === 403) return "AI Error: 403. Access Denied. (Enable 'Generative Language API' in Google Cloud).";
+      if (status === 400) return `AI Error: 400. Bad Request. ${errorData.error?.message || ''}`;
 
     } catch (error) {
       errorLog.push(`${model}: Network Error`);
     }
   }
   
-  return `AI Error: All models failed. Details: [${errorLog.join(', ')}]. Please check Settings -> API Key.`;
+  return `AI Error: Failed. Codes: [${errorLog.join(', ')}].\n\nFix: Go to Google Cloud Console -> Search "Generative Language API" -> Click ENABLE.`;
 };
 
 // --- LOCALIZATION ---
@@ -366,7 +357,7 @@ export default function SyntraApp() {
            Mention their traits (C:${profileData.c_score}, O:${profileData.o_score}). Language: ${lang}.`
         );
         
-        if (emailBody !== "KEY_MISSING") {
+        if (emailBody !== "KEY_MISSING" && !emailBody.startsWith("AI Error")) {
            await addDoc(collection(db, 'artifacts', appId, 'users', activeUserId, 'inbox'), {
              subject: t.welcome_subject,
              body: emailBody,
@@ -443,7 +434,9 @@ export default function SyntraApp() {
 // --- SETTINGS MODAL ---
 const SettingsModal = ({ t, onClose }) => {
   const [key, setKey] = useState('');
-  
+  const [testStatus, setTestStatus] = useState(null); // null, 'loading', 'success', 'error'
+  const [testMsg, setTestMsg] = useState('');
+
   useEffect(() => {
     setKey(localStorage.getItem('syntra_api_key') || '');
   }, []);
@@ -458,6 +451,30 @@ const SettingsModal = ({ t, onClose }) => {
       alert("API Key Removed. App will try to use Environment Variables.");
       window.location.reload();
     }
+  };
+
+  const testConnection = async () => {
+     if (!key.trim()) { setTestMsg("Enter a key first."); return; }
+     setTestStatus('loading');
+     setTestMsg("Testing...");
+     
+     // Temporary save for the test call
+     const originalKey = localStorage.getItem('syntra_api_key');
+     localStorage.setItem('syntra_api_key', key.trim());
+     
+     const result = await callGemini("Say 'OK'", "Test");
+     
+     // Restore original key if user hasn't saved yet
+     if (!originalKey) localStorage.removeItem('syntra_api_key');
+     else localStorage.setItem('syntra_api_key', originalKey);
+
+     if (result.includes("OK")) {
+         setTestStatus('success');
+         setTestMsg("Success! Key is working.");
+     } else {
+         setTestStatus('error');
+         setTestMsg(result);
+     }
   };
 
   return (
@@ -476,7 +493,19 @@ const SettingsModal = ({ t, onClose }) => {
             </div>
             <p className="text-xs text-slate-400 mt-2">Required if Environment Variables are not set. Saved locally in your browser.</p>
           </div>
-          <button onClick={saveKey} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-all">{t.save}</button>
+          
+          {testMsg && (
+             <div className={`p-3 rounded-xl text-xs font-bold ${testStatus === 'success' ? 'bg-green-100 text-green-700' : testStatus === 'error' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
+                {testMsg}
+             </div>
+          )}
+
+          <div className="flex gap-2">
+             <button onClick={testConnection} disabled={testStatus === 'loading'} className="flex-1 bg-teal-50 text-teal-700 py-3 rounded-xl font-bold hover:bg-teal-100 transition-all flex items-center justify-center gap-2">
+                 {testStatus === 'loading' ? <RefreshCw className="animate-spin" size={16}/> : <Zap size={16}/>} Test Key
+             </button>
+             <button onClick={saveKey} className="flex-1 bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-all">{t.save}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -790,6 +819,12 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSettings
         if (aiRaw === "KEY_MISSING") {
            onOpenSettings();
            setMsgs(prev => [...prev, {id: Date.now()+1, role: 'ai', text: "Please set your API Key in Settings to chat."}]);
+           setLoading(false);
+           return;
+        }
+
+        if (aiRaw.startsWith("AI Error")) {
+           setMsgs(prev => [...prev, {id: Date.now()+1, role: 'ai', text: aiRaw}]);
            setLoading(false);
            return;
         }
