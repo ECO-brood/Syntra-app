@@ -5,8 +5,7 @@ import {
   ArrowRight, Sparkles, Send, Plus, Trash2, Smile, 
   Activity, Lightbulb, LogOut, Lock, Mail, UserCircle,
   PenTool, ShieldCheck, Cloud, RefreshCw, MailCheck, Bell,
-  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff, Key, Zap,
-  Server, Network, ToggleLeft, ToggleRight
+  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -38,27 +37,11 @@ import {
 
 // --- CONFIGURATION ---
 
-const getEnvApiKey = () => {
-  try {
-    const localKey = localStorage.getItem('syntra_api_key');
-    if (localKey) return localKey;
-    if (import.meta && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) return import.meta.env.VITE_GEMINI_API_KEY;
-    if (process.env.REACT_APP_GEMINI_API_KEY) return process.env.REACT_APP_GEMINI_API_KEY;
-    if (process.env.NEXT_PUBLIC_GEMINI_API_KEY) return process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-  } catch (e) {
-    console.warn("Environment variable access failed:", e);
-  }
-  return "";
-};
+// 1. GEMINI API KEY
+// For Vercel: const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
+const apiKey = "AIzaSyDfEDK3vxSKuffEZ_qLwUKpWAJxtEULeq8"; 
 
-const getProvider = () => {
-    return localStorage.getItem('syntra_ai_provider') || 'gemini'; 
-};
-
-const getDemoMode = () => {
-    return localStorage.getItem('syntra_demo_mode') === 'true';
-};
-
+// 2. FIREBASE CONFIGURATION
 const firebaseConfig = {
   apiKey: "AIzaSyAu3Mwy1E82hS_8n9nfmaxl_ji7XWb5KoM",
   authDomain: "syntra-9e959.firebaseapp.com",
@@ -67,8 +50,9 @@ const firebaseConfig = {
   messagingSenderId: "858952912964",
   appId: "1:858952912964:web:eef39b1b848a0090af2c11",
   measurementId: "G-P3G12J3TTE"
-};
+};;
 
+// Initialize Firebase with FORCE LONG POLLING for reliability
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = initializeFirestore(app, {
@@ -78,127 +62,58 @@ const db = initializeFirestore(app, {
   })
 });
 
+// 3. STATIC APP ID
 const appId = 'syntra-web-v1';
 
-const MOCK_PROFILE = {
-  name: "Student",
-  age: "18",
-  c_score: 50,
-  o_score: 50
-};
+// --- FALLBACK DATA ---
+const MOCK_PROFILE = { name: "Student", age: "18", c_score: 50, o_score: 50 };
 
+// --- HELPER: SIMULATED AUTH ID ---
 const getHybridUserId = (email) => {
   if (!email) return null;
   return email.toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
 };
 
-const simulateResponse = (prompt, systemInstruction = "") => {
-  const p = prompt.toLowerCase();
-  if (p.includes("break down goal") || p.includes("steps")) {
-    return "Research the main requirements ||| Create a draft outline ||| Review and finalize the project";
+// --- GEMINI API HELPER (SMART FALLBACK) ---
+const callGemini = async (prompt, systemInstruction = "") => {
+  if (!apiKey || apiKey.includes("PASTE_YOUR")) {
+      console.warn("Gemini API Key missing.");
+      return "AI Offline: Key missing.";
   }
-  if (p.includes("analyze journal")) {
-    return "Your reflection shows a strong growth mindset. Keep focusing on small daily wins.";
-  }
-  if (p.includes("welcome email")) {
-    return "Subject: Welcome to Syntra!\n\nWe are excited to have you join us. Your profile suggests you are ready for great things.\n\nBest,\nSyntra Team";
-  }
-  if (p.includes("add") && (p.includes("homework") || p.includes("task") || p.includes("study"))) {
-    const taskName = prompt.replace("add", "").replace("task", "").trim();
-    return `[ADD: ${taskName}] OK, I've added that to your planner.`;
-  }
-  if (p.includes("hello") || p.includes("hi")) return "Hello! I'm Aura. How can I help you organize your studies today?";
-  return "That's an interesting point! Tell me more about how that fits into your study plan.";
-};
 
-const callOpenRouter = async (prompt, systemInstruction, apiKey) => {
-    const models = [
-        "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "mistralai/mistral-7b-instruct:free",
-        "microsoft/phi-3-mini-128k-instruct:free",
-        "google/gemini-pro"
-    ];
-    let lastError = "";
-    for (const model of models) {
-        try {
-            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${apiKey}`,
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": window.location.href, 
-                    "X-Title": "Syntra Student App"
-                },
-                body: JSON.stringify({
-                    "model": model,
-                    "messages": [
-                        { "role": "system", "content": systemInstruction },
-                        { "role": "user", "content": prompt }
-                    ]
-                })
-            });
-            if (response.ok) {
-                const data = await response.json();
-                const text = data.choices?.[0]?.message?.content;
-                if (text) return text;
-            } else {
-                const err = await response.json().catch(() => ({}));
-                console.warn(`OpenRouter model ${model} failed:`, err);
-                lastError = err.error?.message || `Status ${response.status}`;
-            }
-        } catch (e) {
-            console.error(`Network error on OpenRouter ${model}`, e);
-            lastError = "Network Error";
-        }
-    }
-    return `AI Error: OpenRouter failed. Last error: ${lastError}. (Try Demo Mode in Settings)`;
-};
+  // List of models to try in order of preference
+  const models = ["gemini-1.5-flash", "gemini-pro"];
 
-const callGoogleDirect = async (prompt, systemInstruction, apiKey) => {
-  const attempts = [
-    { model: "gemini-1.5-flash", version: "v1beta" },
-    { model: "gemini-1.5-pro", version: "v1beta" }
-  ];
-  for (const { model, version } of attempts) {
+  for (const model of models) {
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ 
               role: "user",
-              parts: [{ text: `${systemInstruction ? `SYSTEM: ${systemInstruction}\n\n` : ''}USER: ${prompt}` }] 
+              parts: [{ text: `${systemInstruction}\n\nUser: ${prompt}` }] 
             }]
           })
         }
       );
+      
       if (response.ok) {
         const data = await response.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text;
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: No text.";
+      } else {
+        console.warn(`Model ${model} failed with ${response.status}. Trying next...`);
       }
-    } catch (error) {
-      console.error("Direct Google fail:", model);
+    } catch (e) {
+      console.error(`Network error on ${model}:`, e);
     }
   }
-  return null;
+  return "AI Connection Failed. Please check internet & API Key.";
 };
 
-const callAI = async (prompt, systemInstruction = "") => {
-  if (getDemoMode()) {
-      await new Promise(r => setTimeout(r, 800));
-      return simulateResponse(prompt, systemInstruction);
-  }
-  const apiKey = getEnvApiKey();
-  const provider = getProvider();
-  if (!apiKey || apiKey.length < 5) return "KEY_MISSING";
-  if (provider === 'openrouter') return await callOpenRouter(prompt, systemInstruction, apiKey);
-  const googleRes = await callGoogleDirect(prompt, systemInstruction, apiKey);
-  if (googleRes) return googleRes;
-  return `AI Connection Failed. \n\nTip: Enable "Demo Mode" in Settings to continue without AI.`;
-};
-
+// --- LOCALIZATION ---
 const LANGUAGES = {
   en: {
     welcome: "Welcome to Syntra",
@@ -243,17 +158,7 @@ const LANGUAGES = {
     task_auto_updated: "Task updated:",
     offline_mode: "Offline",
     reconnect: "Retry",
-    connect_error: "Connection Issue",
-    settings: "Settings",
-    api_key_label: "API Key",
-    api_key_placeholder: "Paste Key here...",
-    save: "Save",
-    provider_label: "AI Provider",
-    provider_google: "Google Gemini",
-    provider_openrouter: "OpenRouter",
-    openrouter_note: "Fixes connection issues. Get free key at openrouter.ai",
-    demo_mode: "Demo Mode (Simulate AI)",
-    demo_note: "Use this if APIs are blocked or failing. Fakes intelligent responses."
+    connect_error: "Connection Issue"
   },
   ar: {
     welcome: "مرحباً بك في سينترا",
@@ -298,190 +203,56 @@ const LANGUAGES = {
     task_auto_updated: "تم تعديل:",
     offline_mode: "غير متصل",
     reconnect: "إعادة المحاولة",
-    connect_error: "مشكلة في الاتصال",
-    settings: "الإعدادات",
-    api_key_label: "مفتاح API",
-    api_key_placeholder: "ضع المفتاح هنا...",
-    save: "حفظ",
-    provider_label: "مزود الخدمة",
-    provider_google: "جوجل",
-    provider_openrouter: "OpenRouter",
-    openrouter_note: "يحل مشاكل الاتصال. احصل على مفتاح مجاني من openrouter.ai",
-    demo_mode: "وضع التجربة (محاكاة)",
-    demo_note: "استخدم هذا الوضع لو فيه مشكلة في الاتصال."
+    connect_error: "مشكلة في الاتصال"
   }
 };
 
-// --- DATA: 40 SJT QUESTIONS (20C + 20O) ---
-const SJT_DATA = [
-  // --- CONSCIENTIOUSNESS (C) 1-20 ---
-  { id: 1, trait: 'C', 
-    text_en: "You have a massive pile of homework due tomorrow, but your friends just invited you to a cafe.", 
-    text_ar: "عندك واجبات كتير جداً لتسليم بكره، بس صحابك كلموك عشان تنزلوا تقعدوا على القهوة.", 
-    options_en: ["Decline firmly to finish work.", "Go for 1 hour, then work late.", "Take your books with you.", "Go and copy answers later."], 
-    options_ar: ["أعتذر بحزم وأخلص اللي ورايا.", "أنزل ساعة واحدة وأسهر أكمل.", "آخد كتبي معايا نذاكر سوا.", "أنزل وأبقى أنقل الواجب بعدين."] 
-  },
-  { id: 2, trait: 'C', 
-    text_en: "Your desk is currently a mess of papers and books.", 
-    text_ar: "مكتبك حالياً مليان ورق وكتب ودوشة.", 
-    options_en: ["Clean it before starting work.", "Push it aside and work.", "I work better in chaos.", "Clean it on the weekend."], 
-    options_ar: ["أنضفه تماماً قبل ما أبدأ.", "أوسع مكان لنفسي وأشتغل.", "أنا بركز أكتر في الدوشة دي.", "هنضفه في الأجازة."] 
-  },
-  { id: 3, trait: 'C',
-    text_en: "You set a goal to study 3 hours, but you feel tired after 1 hour.",
-    text_ar: "حددت هدف تذاكر ٣ ساعات، بس تعبت بعد ساعة واحدة.",
-    options_en: ["Push through until finished.", "Take a short break then continue.", "Stop and try again tomorrow.", "Give up on the plan."],
-    options_ar: ["أضغط على نفسي لحد ما أخلص.", "آخد بريك صغير وأكمل.", "أوقف وأجرب تاني بكره.", "ألغي الخطة دي."]
-  },
-  { id: 4, trait: 'C',
-    text_en: "You find a mistake in your graded exam that gave you extra marks.",
-    text_ar: "لقيت غلطة في تصحيح امتحانك اديتك درجات زيادة.",
-    options_en: ["Tell the teacher immediately.", "Ignore it, it's good luck.", "Tell friends but keep quiet.", "Wait to see if anyone notices."],
-    options_ar: ["أقول للمدرس فوراً.", "أتجاهلها، دي حظ حلو.", "أقول لصحابي بس.", "أستنى أشوف حد هياخد باله ولا لا."]
-  },
-  { id: 5, trait: 'C',
-    text_en: "A long-term project is assigned due in 2 months.",
-    text_ar: "مطلوب منك مشروع كبير تسليمه بعد شهرين.",
-    options_en: ["Start planning immediately.", "Wait a few weeks to start.", "Do it all in the last week.", "Forget about it until reminded."],
-    options_ar: ["أبدأ أخطط له فوراً.", "أستنى كام أسبوع وأبدأ.", "أعمله كله في آخر أسبوع.", "أنساه لحد ما حد يفكرني."]
-  },
-  { id: 6, trait: 'C',
-    text_en: "Your friend asks to copy your homework.",
-    text_ar: "صاحبك طلب ينقل الواجب منك.",
-    options_en: ["Refuse, but offer to explain it.", "Let them copy this one time.", "Give it to them immediately.", "Pretend you didn't do it."],
-    options_ar: ["أرفض، بس أعرض أشرحله.", "أسيبه ينقل المرة دي بس.", "أديهوله فوراً.", "أعمل نفسي معملتوش."]
-  },
-  { id: 7, trait: 'C',
-    text_en: "You realize you will be late for a meeting.",
-    text_ar: "اكتشفت إنك هتتأخر على ميعاد.",
-    options_en: ["Call ahead to inform them.", "Rush to get there ASAP.", "Hope they don't notice.", "Don't go at all."],
-    options_ar: ["أتصل أبلغهم قبلها.", "أستعجل عشان أوصل بسرعة.", "أتمنى محدش ياخد باله.", "مروحش خالص."]
-  },
-  { id: 8, trait: 'C',
-    text_en: "You are reading a book and it gets boring in the middle.",
-    text_ar: "بتقرأ كتاب وحسيت بملل في نصه.",
-    options_en: ["Finish it anyway.", "Skip to the interesting parts.", "Switch to another book.", "Stop reading."],
-    options_ar: ["أكمله للآخر برضه.", "أعدي الحتت المملة.", "أبدأ كتاب تاني.", "أبطل قراية."]
-  },
-  { id: 9, trait: 'C',
-    text_en: "You bought a new gadget requiring assembly.",
-    text_ar: "اشتريت جهاز جديد محتاج تركيب.",
-    options_en: ["Read the manual first.", "Try to assemble, then read.", "Guess how it works.", "Ask someone else to do it."],
-    options_ar: ["أقرأ الكتالوج الأول.", "أجرب أركب، بعدين أقرأ.", "أخمن بيشتغل ازاي.", "أخلي حد تاني يعمله."]
-  },
-  { id: 10, trait: 'C',
-    text_en: "You have a strict budget for the week.",
-    text_ar: "معاك ميزانية محددة للمصاريف الأسبوع ده.",
-    options_en: ["Stick to it perfectly.", "Spend a little extra.", "Ignore it if I see something I like.", "Borrow money to spend more."],
-    options_ar: ["ألتزم بيها تماماً.", "أصرف زيادة حاجات بسيطة.", "أتجاهلها لو عجبني حاجة.", "أستلف فلوس وأصرف."]
-  },
-  { id: 11, trait: 'C', text_en: "Your room is messy.", text_ar: "أوضتك مكركبة.", options_en: ["Clean it now.", "Clean it later.", "Leave it.", "Wait for mom."], options_ar: ["أنضفها دلوقتي.", "أنضفها بعدين.", "أسيبها.", "أستنى ماما."] },
-  { id: 12, trait: 'C', text_en: "You promised to call someone.", text_ar: "وعدت تكلم حد.", options_en: ["Call at exact time.", "Call slightly late.", "Text instead.", "Forget."], options_ar: ["أكلمه في الميعاد بالظبط.", "أكلمه متأخر شوية.", "أبعت رسالة.", "أنسى."] },
-  { id: 13, trait: 'C', text_en: "Making a list.", text_ar: "كتابة قائمة مهام.", options_en: ["Always.", "Sometimes.", "Rarely.", "Never."], options_ar: ["دايماً.", "أحياناً.", "نادراً.", "أبداً."] },
-  { id: 14, trait: 'C', text_en: "Double checking work.", text_ar: "مراجعة الشغل.", options_en: ["Every time.", "If important.", "Quick glance.", "No need."], options_ar: ["كل مرة.", "لو مهم بس.", "بصة سريعة.", "ملوش لازمة."] },
-  { id: 15, trait: 'C', text_en: "Being early.", text_ar: "تروح بدري.", options_en: ["Always early.", "On time.", "Usually late.", "Very late."], options_ar: ["دايماً بدري.", "في الميعاد.", "غالباً متأخر.", "متأخر جداً."] },
-  { id: 16, trait: 'C', text_en: "Returning borrowed items.", text_ar: "ترجيع حاجات مستلفة.", options_en: ["Promptly.", "When asked.", "Eventually.", "Keep them."], options_ar: ["بسرعة.", "لما يطلبوا.", "في الآخر.", "أحتفظ بيها."] },
-  { id: 17, trait: 'C', text_en: "Following rules.", text_ar: "اتباع القوانين.", options_en: ["Strictly.", "Mostly.", "Loosely.", "Rebel."], options_ar: ["بصرامة.", "في الأغلب.", "بمرونة.", "مبتبعش."] },
-  { id: 18, trait: 'C', text_en: "Planning a trip.", text_ar: "تخطيط سفرية.", options_en: ["Detailed itinerary.", "Rough plan.", "Go with flow.", "Chaos."], options_ar: ["جدول مفصل.", "خطة مبدئية.", "زي ما تيجي.", "فوضى."] },
-  { id: 19, trait: 'C', text_en: "Attention to detail.", text_ar: "الاهتمام بالتفاصيل.", options_en: ["Very high.", "High.", "Average.", "Low."], options_ar: ["عالي جداً.", "عالي.", "متوسط.", "قليل."] },
-  { id: 20, trait: 'C', text_en: "Finishing chores.", text_ar: "تخلص اللي وراك.", options_en: ["Before relaxing.", "After relaxing.", "Tomorrow.", "Never."], options_ar: ["قبل ما أرتاح.", "بعد ما أرتاح.", "بكره.", "أبداً."] },
+// --- FULL 40 UNIQUE SJT QUESTIONS (20 C, 20 O) ---
+const FULL_SJT = [
+    // --- CONSCIENTIOUSNESS (20 Items) ---
+    { id: 1, trait: 'C', text_en: "You have a massive pile of homework due tomorrow, but friends invited you out.", text_ar: "وراك واجبات كتير لبكره بس صحابك عزموك تخرج.", options_en: ["Decline and finish work.", "Go for 1 hour then work.", "Take books with me.", "Go and copy later."], options_ar: ["أعتذر وأخلص اللي ورايا.", "أنزل ساعة وأرجع أكمل.", "آخد كتبي معايا.", "أنزل وأنقل الواجب بعدين."] },
+    { id: 2, trait: 'C', text_en: "Your desk is extremely messy.", text_ar: "مكتبك مكركب جداً.", options_en: ["Clean immediately.", "Push mess aside.", "Work in the mess.", "Clean next week."], options_ar: ["أنضفه فوراً.", "أوسع مكان وأقعد.", "أشتغل وسط الكركبة.", "أنضفه الأسبوع الجاي."] },
+    { id: 3, trait: 'C', text_en: "You planned to wake up at 6 AM to study.", text_ar: "خططت تصحى ٦ الصبح تذاكر.", options_en: ["Wake up at 5:55 AM.", "Snooze once then get up.", "Sleep till noon.", "Study at night instead."], options_ar: ["أصحى ٥:٥٥.", "أغفل ٥ دقايق وأقوم.", "أراحت عليا نومة.", "أذاكر بالليل وخلاص."] },
+    { id: 4, trait: 'C', text_en: "You found a small mistake in your exam that gave you extra marks.", text_ar: "لقيت غلطة في التصحيح زودتك درجات.", options_en: ["Tell the teacher.", "Keep quiet.", "Tell friends only.", "Ignore it."], options_ar: ["أقول للمدرس.", "أسكت.", "أقول لصحابي بس.", "أطنش."] },
+    { id: 5, trait: 'C', text_en: "You have a project due in 2 months.", text_ar: "عندك مشروع يتسلم بعد شهرين.", options_en: ["Start planning today.", "Start in a month.", "Start next week.", "Do it the night before."], options_ar: ["أخطط من النهاردة.", "أبدأ كمان شهر.", "أبدأ الأسبوع الجاي.", "أعمله ليلة التسليم."] },
+    { id: 6, trait: 'C', text_en: "You made a to-do list for the day.", text_ar: "عملت قائمة مهام لليوم.", options_en: ["Finish everything perfectly.", "Finish most items.", "Forget the list.", "Do unrelated things."], options_ar: ["أخلص كله بالمسطرة.", "أخلص المعظم.", "أنسى القائمة.", "أعمل حاجات تانية."] },
+    { id: 7, trait: 'C', text_en: "You borrow a book from a friend.", text_ar: "استلفت كتاب من صاحبك.", options_en: ["Return it early.", "Return on time.", "Return when asked.", "Forget I have it."], options_ar: ["أرجعه بدري.", "أرجعه في ميعاده.", "أرجعه لما يطلبه.", "أنسى إنه معايا."] },
+    { id: 8, trait: 'C', text_en: "You are doing a group project.", text_ar: "بتعمل مشروع جماعي.", options_en: ["Organize everyone's tasks.", "Do my part only.", "Wait for instructions.", "Let others do the work."], options_ar: ["أنظم مهام الكل.", "أعمل جزئي بس.", "أستنى التعليمات.", "أسيبهم يشتغلوا هما."] },
+    { id: 9, trait: 'C', text_en: "A boring but important lecture.", text_ar: "حصة مهمة بس مملة.", options_en: ["Take detailed notes.", "Listen passively.", "Doodle.", "Sleep."], options_ar: ["أكتب كل كلمة.", "أسمع وخلاص.", "أشخبط.", "أنام."] },
+    { id: 10, trait: 'C', text_en: "You promised to call your grandma.", text_ar: "وعدت تكلم جدتك.", options_en: ["Call exactly on time.", "Call slightly late.", "Text instead.", "Forget completely."], options_ar: ["أكلمها في الميعاد بالظبط.", "أتأخر شوية.", "أبعت رسالة.", "أنسى."] },
+    { id: 11, trait: 'C', text_en: "Buying a new phone.", text_ar: "هتشتري موبايل جديد.", options_en: ["Research specs for weeks.", "Ask a friend.", "Buy what looks cool.", "Impulse buy."], options_ar: ["أبحث أسابيع.", "أسأل صاحبي.", "أجيب اللي شكله حلو.", "أشتري أي حاجة."] },
+    { id: 12, trait: 'C', text_en: "You receive an email requiring a reply.", text_ar: "جالك إيميل محتاج رد.", options_en: ["Reply instantly.", "Reply same day.", "Reply next week.", "Forget to reply."], options_ar: ["أرد فوراً.", "أرد في نفس اليوم.", "أرد الأسبوع الجاي.", "أنسى أرد."] },
+    { id: 13, trait: 'C', text_en: "Following a diet/exercise plan.", text_ar: "ماشي على نظام غذائي.", options_en: ["Stick to it 100%.", "Cheat once a week.", "Cheat often.", "Quit after 2 days."], options_ar: ["ألتزم ١٠٠٪.", "ألخبط مرة في الأسبوع.", "ألخبط كتير.", "أبطل بعد يومين."] },
+    { id: 14, trait: 'C', text_en: "Your room cleanliness.", text_ar: "نظافة أوضتك.", options_en: ["Always spotless.", "Mostly clean.", "Cluttered.", "Disaster zone."], options_ar: ["دايماً بتلمع.", "نضيفة نوعاً ما.", "مكركبة.", "منطقة كوارث."] },
+    { id: 15, trait: 'C', text_en: "Being on time for appointments.", text_ar: "مواعيدك.", options_en: ["Always 10 mins early.", "Exactly on time.", "5 mins late.", "Always late."], options_ar: ["دايماً بدري ١٠ دقايق.", "على الميعاد بالظبط.", "متأخر ٥ دقايق.", "دايماً متأخر."] },
+    { id: 16, trait: 'C', text_en: "Double-checking your work.", text_ar: "مراجعة شغلك.", options_en: ["Check 3 times.", "Check once.", "Quick glance.", "Submit without checking."], options_ar: ["أراجع ٣ مرات.", "أراجع مرة.", "بصة سريعة.", "أسلم من غير مراجعة."] },
+    { id: 17, trait: 'C', text_en: "Paying attention to details.", text_ar: "التركيز في التفاصيل.", options_en: ["Notice everything.", "Notice important things.", "Miss small details.", "Miss big details."], options_ar: ["باخد بالي من كل فسفوسة.", "بركز في المهم.", "بتفوتني حاجات صغيرة.", "أنا ضايع في التفاصيل."] },
+    { id: 18, trait: 'C', text_en: "Setting yearly goals.", text_ar: "أهداف السنة الجديدة.", options_en: ["Write detailed plan.", "Have a general idea.", "Decide as I go.", "No goals."], options_ar: ["أكتب خطة مفصلة.", "فكرة عامة.", "حسب التساهيل.", "مفيش أهداف."] },
+    { id: 19, trait: 'C', text_en: "Organizing computer files.", text_ar: "تنظيم ملفات الكمبيوتر.", options_en: ["Folders within folders.", "One desktop folder.", "All on desktop.", "Cannot find anything."], options_ar: ["فولدرات جوه فولدرات.", "فولدر واحد مجمع.", "كله على سطح المكتب.", "مش لاقي حاجة."] },
+    { id: 20, trait: 'C', text_en: "Handling a difficult task.", text_ar: "مهمة صعبة.", options_en: ["Break it down and start.", "Procrastinate then start.", "Ask someone else.", "Avoid it."], options_ar: ["أقسمها وأبدأ.", "أسوف شوية وأبدأ.", "أخلي حد يعملها.", "أهرب منها."] },
 
-  // --- OPENNESS (O) 21-40 ---
-  { id: 21, trait: 'O',
-    text_en: "You have free time. You prefer to watch:",
-    text_ar: "عندك وقت فاضي. تفضل تتفرج على:",
-    options_en: ["A documentary about space.", "A popular comedy movie.", "Reality TV show.", "Sports highlights."],
-    options_ar: ["وثائقي عن الفضاء.", "فيلم كوميدي مشهور.", "برنامج مقالب.", "ملخص ماتشات."]
-  },
-  { id: 22, trait: 'O',
-    text_en: "A new difficult method of solving math problems is introduced.",
-    text_ar: "المدرس شرح طريقة جديدة صعبة لحل المسائل.",
-    options_en: ["Try to master it, it's interesting.", "Stick to the old easy way.", "Complain it's too hard.", "Ignore it."],
-    options_ar: ["أحاول أتقنها، شكلها ممتع.", "أخليك في الطريقة القديمة السهلة.", "أشتكي إنها صعبة.", "أتجاهلها."]
-  },
-  { id: 23, trait: 'O',
-    text_en: "Your friends want to try a strange new restaurant.",
-    text_ar: "صحابك عايزين يجربوا مطعم غريب وجديد.",
-    options_en: ["Excited to try new flavors.", "Check reviews first.", "Prefer our usual spot.", "Refuse, I know what I like."],
-    options_ar: ["متحمس أجرب أطعمة جديدة.", "أشوف التقييمات الأول.", "أفضل المطعم المعتاد.", "أرفض، أنا عارف بحب إيه."]
-  },
-  { id: 24, trait: 'O',
-    text_en: "You see a piece of abstract art that makes no sense.",
-    text_ar: "شفت لوحة فن تجريدي مش مفهومة.",
-    options_en: ["Analyze what it might mean.", "Read the description.", "Glance and move on.", "Say it's a waste of time."],
-    options_ar: ["أحلل ممكن يكون معناها إيه.", "أقرا الوصف بتاعها.", "بصة سريعة وأمشي.", "أقول ده تضييع وقت."]
-  },
-  { id: 25, trait: 'O',
-    text_en: "A teacher proposes a debate on a controversial topic.",
-    text_ar: "مدرس اقترح مناظرة عن موضوع جدلي.",
-    options_en: ["Participate to hear views.", "Listen quietly.", "Avoid the class.", "Argue against having it."],
-    options_ar: ["أشارك عشان أسمع وجهات النظر.", "أسمع في صمت.", "أهرب من الحصة.", "أعترض على الفكرة."]
-  },
-  { id: 26, trait: 'O',
-    text_en: "You have to choose an elective subject.",
-    text_ar: "لازم تختار مادة إضافية.",
-    options_en: ["Philosophy or Art.", "History.", "Business.", "Whatever is easiest."],
-    options_ar: ["فلسفة أو فنون.", "تاريخ.", "بيزنس.", "أي حاجة سهلة."]
-  },
-  { id: 27, trait: 'O',
-    text_en: "Solving a puzzle with no instructions.",
-    text_ar: "حل لغز من غير تعليمات.",
-    options_en: ["Fun challenge.", "Annoying but okay.", "Frustrating.", "Give up immediately."],
-    options_ar: ["تحدي ممتع.", "ممل بس ماشي.", "حاجة تعصب.", "أستسلم فوراً."]
-  },
-  { id: 28, trait: 'O',
-    text_en: "Traveling to a country where you don't speak the language.",
-    text_ar: "السفر لبلد متعرفش لغتها.",
-    options_en: ["Thrilling adventure.", "Scary but okay.", "Only with a guide.", "Never."],
-    options_ar: ["مغامرة مثيرة.", "مرعبة بس ماشي.", "لازم مع مرشد.", "مستحيل."]
-  },
-  { id: 29, trait: 'O',
-    text_en: "Listening to a genre of music you hate.",
-    text_ar: "تسمع نوع مزيكا بتكرهه.",
-    options_en: ["Try to find something good in it.", "Tolerate it.", "Ask to change it.", "Leave the room."],
-    options_ar: ["أحاول ألاقي حاجة حلوة فيها.", "أستحملها.", "أطلب نغيرها.", "أسيب المكان."]
-  },
-  { id: 30, trait: 'O',
-    text_en: "Daydreaming.",
-    text_ar: "أحلام اليقظة.",
-    options_en: ["Often, expansive ideas.", "Sometimes.", "Rarely.", "Waste of time."],
-    options_ar: ["كتير، وأفكار واسعة.", "أحياناً.", "نادراً.", "تضييع وقت."]
-  },
-  { id: 31, trait: 'O', text_en: "New technology.", text_ar: "تكنولوجيا جديدة.", options_en: ["Adopt immediately.", "Wait for reviews.", "Wait until necessary.", "Avoid."], options_ar: ["أجرب فوراً.", "أستنى المراجعات.", "لما أضطر.", "أتجنبها."] },
-  { id: 32, trait: 'O', text_en: "Poetry.", text_ar: "الشعر.", options_en: ["Love it.", "It's okay.", "Don't get it.", "Boring."], options_ar: ["بحبه.", "ماشي الحال.", "مبفهموش.", "ممل."] },
-  { id: 33, trait: 'O', text_en: "Philosophical discussions.", text_ar: "ناقشات فلسفية.", options_en: ["Seek them out.", "Participate if happened.", "Listen only.", "Avoid."], options_ar: ["بسعى ليها.", "أشارك لو حصلت.", "أسمع بس.", "أهرب."] },
-  { id: 34, trait: 'O', text_en: "Routine.", text_ar: "الروتين.", options_en: ["Hate it, change often.", "Change sometimes.", "Like it.", "Need it."], options_ar: ["بكرهه، بغير كتير.", "بغير ساعات.", "بحبه.", "محتاجه."] },
-  { id: 35, trait: 'O', text_en: "Emotional movies.", text_ar: "أفلام عاطفية.", options_en: ["Deeply moved.", "Touched.", "Indifferent.", "Dislike."], options_ar: ["بتأثر جداً.", "بتأثر.", "عادي.", "مبحبهاش."] },
-  { id: 36, trait: 'O', text_en: "Nature.", text_ar: "الطبيعة.", options_en: ["See beauty everywhere.", "Nice view.", "It's just dirt.", "Prefer city."], options_ar: ["شايف جمال في كل حتة.", "منظر لطيف.", "مجرد تراب.", "بفضل المدينة."] },
-  { id: 37, trait: 'O', text_en: "Theoretical ideas.", text_ar: "أفكار نظرية.", options_en: ["Fascinating.", "Interesting.", "Confusing.", "Useless."], options_ar: ["مبهرة.", "مثيرة للاهتمام.", "ملخبطة.", "ملهاش فايدة."] },
-  { id: 38, trait: 'O', text_en: "Variety.", text_ar: "التنوع.", options_en: ["Spice of life.", "Good sometimes.", "Prefer consistency.", "Dislike change."], options_ar: ["روح الحياة.", "كويس ساعات.", "بفضل الثبات.", "بكره التغيير."] },
-  { id: 39, trait: 'O', text_en: "Curiosity.", text_ar: "الفضول.", options_en: ["About everything.", "Specific topics.", "Rarely.", "Not curious."], options_ar: ["عن كل حاجة.", "مواضيع محددة.", "نادراً.", "غير فضولي."] },
-  { id: 40, trait: 'O', text_en: "Creative writing.", text_ar: "الكتابة الإبداعية.", options_en: ["Enjoy doing it.", "Enjoy reading it.", "School work only.", "Hate it."], options_ar: ["بستمتع أعملها.", "بستمتع أقراها.", "شغل مدرسة بس.", "بكرهها."] }
+    // --- OPENNESS (20 Items) ---
+    { id: 21, trait: 'O', text_en: "You see a strange modern art painting.", text_ar: "شفت لوحة فن تجريدي غريبة.", options_en: ["Analyze its meaning.", "Find it interesting.", "Confusing.", "Waste of paint."], options_ar: ["أحلل معناها.", "شكلها مثير.", "ملخبطة.", "تضييع ألوان."] },
+    { id: 22, trait: 'O', text_en: "Trying a new exotic food.", text_ar: "أكلة غريبة أول مرة تشوفها.", options_en: ["Eat it immediately.", "Ask what it is first.", "Smell it cautiously.", "Refuse to eat."], options_ar: ["آكلها فوراً.", "أسأل دي إيه الأول.", "أشمها بحذر.", "أرفض آكلها."] },
+    { id: 23, trait: 'O', text_en: "Learning a new language.", text_ar: "تتعلم لغة جديدة.", options_en: ["Excited for the challenge.", "Okay if required.", "Seems hard.", "Useless."], options_ar: ["متحمس للتحدي.", "ماشي لو مطلوب.", "شكلها صعب.", "ملهاش لازمة."] },
+    { id: 24, trait: 'O', text_en: "Teacher discusses a philosophical theory.", text_ar: "المدرس بيتكلم في فلسفة عميقة.", options_en: ["Ask questions to go deeper.", "Listen quietly.", "Zone out.", "Ask if this is in the exam."], options_ar: ["أسأل عشان أفهم أكتر.", "أسمع بس.", "أسرح.", "أسأله ده في الامتحان؟"] },
+    { id: 25, trait: 'O', text_en: "Free time activity preference.", text_ar: "نشاط في وقت الفراغ.", options_en: ["Visit a museum.", "Read a novel.", "Play video games.", "Sleep."], options_ar: ["أزور متحف.", "أقرا رواية.", "ألعب فيديو جيمز.", "أنام."] },
+    { id: 26, trait: 'O', text_en: "Hearing a song in a language you don't know.", text_ar: "أغنية بلغة مش عارفها.", options_en: ["Look up translation.", "Enjoy the melody.", "Skip it.", "Annoying."], options_ar: ["أدور على ترجمتها.", "أستمتع باللحن.", "أقلبها.", "مزعجة."] },
+    { id: 27, trait: 'O', text_en: "Travel preference.", text_ar: "تفضيلات السفر.", options_en: ["Explore unknown city.", "Guided tour.", "Beach resort.", "Stay home."], options_ar: ["أستكشف مدينة مجهولة.", "رحلة منظمة.", "منتجع عالبحر.", "أقعد في البيت."] },
+    { id: 28, trait: 'O', text_en: "Solving a riddle.", text_ar: "حل لغز.", options_en: ["Love the mental exercise.", "Try for a bit.", "Google the answer.", "Ignore it."], options_ar: ["بموت في التفكير.", "أحاول شوية.", "أجيب الحل من جوجل.", "أطنش."] },
+    { id: 29, trait: 'O', text_en: "Daydreaming.", text_ar: "أحلام اليقظة.", options_en: ["I live in my head.", "Often.", "Sometimes.", "Never."], options_ar: ["عايش جوه دماغي.", "غالباً.", "أحياناً.", "أبداً."] },
+    { id: 30, trait: 'O', text_en: "Watching a documentary.", text_ar: "فيلم وثائقي.", options_en: ["Fascinating.", "Okay.", "Boring.", "Change channel."], options_ar: ["مذهل.", "ماشي الحال.", "ممل.", "أغير القناة."] },
+    { id: 31, trait: 'O', text_en: "Changing your daily route.", text_ar: "تغيير طريقك اليومي.", options_en: ["Do it for variety.", "Only if traffic.", "Rarely.", "Never change route."], options_ar: ["أغير عشان التجديد.", "لو فيه زحمة بس.", "نادراً.", "مغيرش طريقي أبداً."] },
+    { id: 32, trait: 'O', text_en: "Reading poetry.", text_ar: "قراءة الشعر.", options_en: ["Love the metaphors.", "It's nice.", "Hard to understand.", "Boring."], options_ar: ["بعشق التشبيهات.", "حلو.", "صعب الفهم.", "ممل."] },
+    { id: 33, trait: 'O', text_en: "Meeting people with different views.", text_ar: "ناس أفكارهم عكسك.", options_en: ["Discuss to understand.", "Listen politely.", "Avoid topic.", "Argue."], options_ar: ["أناقشهم عشان أفهم.", "أسمع بأدب.", "أتجنب الموضوع.", "أتخانق."] },
+    { id: 34, trait: 'O', text_en: "Curiosity about how things work.", text_ar: "الفضول عن كيفية عمل الأشياء.", options_en: ["Take things apart.", "Watch a video.", "Don't care.", "Just use it."], options_ar: ["أفكك الحاجة.", "أتفرج على فيديو.", "مش مهتم.", "أستخدمها وخلاص."] },
+    { id: 35, trait: 'O', text_en: "Abstract concepts.", text_ar: "الأفكار المجردة.", options_en: ["Love theoretical talk.", "Prefer real examples.", "Too confusing.", "Waste of time."], options_ar: ["بحب الكلام النظري.", "فضل الأمثلة الواقعية.", "ملخبطة جداً.", "تضييع وقت."] },
+    { id: 36, trait: 'O', text_en: "Trying a new hobby.", text_ar: "تجربة هواية جديدة.", options_en: ["Try frequently.", "Try if invited.", "Stick to old hobbies.", "No hobbies."], options_ar: ["بجرب كتير.", "أجرب لو حد عزم.", "أخليك في القديم.", "معنديش هوايات."] },
+    { id: 37, trait: 'O', text_en: "Beauty in nature.", text_ar: "الجمال في الطبيعة.", options_en: ["Stop to admire.", "Notice it.", "Walk past.", "Don't notice."], options_ar: ["أقف أتأمل.", "آخد بالي.", "أمشي عادي.", "مش باخد بالي."] },
+    { id: 38, trait: 'O', text_en: "Variety in life.", text_ar: "التنوع في الحياة.", options_en: ["Need it to survive.", "Like it.", "Prefer routine.", "Hate change."], options_ar: ["محتاجه عشان أعيش.", "بحبه.", "بفضل الروتين.", "بكره التغيير."] },
+    { id: 39, trait: 'O', text_en: "Emotional depth in movies.", text_ar: "العمق العاطفي في الأفلام.", options_en: ["Cry and analyze.", "Feel touched.", "Just entertainment.", "Prefer action."], options_ar: ["أعيط وأحلل.", "أتأثر.", "مجرد تسلية.", "بفضل الأكشن."] },
+    { id: 40, trait: 'O', text_en: "Complexity.", text_ar: "التعقيد.", options_en: ["Seek it out.", "Handle it.", "Simplify it.", "Avoid it."], options_ar: ["أدور عليه.", "أتعامل معاه.", "أبسطه.", "أتجنبه."] }
 ];
-
-const SJTTest = ({ t, onComplete }) => {
-  const [current, setCurrent] = useState(0);
-  const handleSelect = () => {
-    if (current < SJT_DATA.length - 1) setCurrent(c => c + 1);
-    else onComplete({ c: 75, o: 65 });
-  };
-  const q = SJT_DATA[current];
-  const progress = ((current + 1) / SJT_DATA.length) * 100;
-  return (
-    <div className="w-full animate-in fade-in duration-500">
-      <div className="w-full bg-slate-200 h-3 rounded-full mb-8 overflow-hidden"><div className="bg-teal-500 h-full transition-all duration-500 ease-out" style={{ width: `${progress}%` }}></div></div>
-      <div className="bg-white p-8 md:p-12 rounded-[2.5rem] shadow-2xl border border-slate-100 relative">
-         <span className="inline-block px-4 py-1.5 bg-teal-50 text-teal-700 rounded-full text-sm font-bold mb-6 tracking-wide uppercase border border-teal-100">{t.scenario} {current + 1}</span>
-         <h3 className="text-2xl font-semibold text-slate-800 mb-8">{t === LANGUAGES.ar ? q.text_ar : q.text_en}</h3>
-         <div className="grid gap-3">
-           {(t === LANGUAGES.ar ? q.options_ar : q.options_en).map((opt, i) => (
-             <button key={i} onClick={handleSelect} className="w-full text-start p-4 rounded-xl border border-slate-200 hover:border-teal-500 hover:bg-teal-50 transition-all font-medium text-slate-600 hover:text-slate-900">{opt}</button>
-           ))}
-         </div>
-      </div>
-    </div>
-  );
-};
 
 // --- MAIN COMPONENT ---
 export default function SyntraApp() {
@@ -491,7 +262,6 @@ export default function SyntraApp() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('auth'); 
   const [isOffline, setIsOffline] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
 
   const t = LANGUAGES[lang];
   const isRTL = lang === 'ar';
@@ -500,6 +270,7 @@ export default function SyntraApp() {
     const init = async () => {
       const storedEmail = localStorage.getItem('syntra_user_email');
       
+      // Attempt anonymous auth if not logged in
       if (!auth.currentUser) {
         await signInAnonymously(auth).catch(() => {
             console.warn("Offline: Auth failed.");
@@ -525,6 +296,7 @@ export default function SyntraApp() {
         } catch (e) {
           console.error("Init Error:", e);
           setIsOffline(true);
+          // FALLBACK: Load MOCK PROFILE only on error so user can still see UI
           setUserProfile(MOCK_PROFILE); 
           setView('dashboard');
         }
@@ -561,6 +333,7 @@ export default function SyntraApp() {
     } catch (e) {
       console.error("Login Error:", e);
       setIsOffline(true);
+      // Try to load dashboard anyway with fallback if error
       setUserProfile(MOCK_PROFILE);
       setView('dashboard');
     }
@@ -568,8 +341,10 @@ export default function SyntraApp() {
   };
 
   const handleProfileComplete = async (profileData) => {
+    // 1. Set local state immediately
     setUserProfile(profileData);
     
+    // 2. Try to save to cloud (Fire & Forget)
     if (activeUserId && !isOffline) {
       try {
         await setDoc(doc(db, 'artifacts', appId, 'users', activeUserId, 'data', 'profile'), {
@@ -579,25 +354,25 @@ export default function SyntraApp() {
         });
         
         // Generate Welcome Email
-        const emailBody = await callAI(
+        const emailBody = await callGemini(
           `Write a short, professional welcome email for student ${profileData.name}. 
            Mention their traits (C:${profileData.c_score}, O:${profileData.o_score}). Language: ${lang}.`
         );
         
-        if (emailBody && !emailBody.includes("KEY_MISSING") && !emailBody.startsWith("AI Connection Failed")) {
-           await addDoc(collection(db, 'artifacts', appId, 'users', activeUserId, 'inbox'), {
-             subject: t.welcome_subject,
-             body: emailBody,
-             read: false,
-             date: serverTimestamp()
-           });
-        }
+        await addDoc(collection(db, 'artifacts', appId, 'users', activeUserId, 'inbox'), {
+          subject: t.welcome_subject,
+          body: emailBody,
+          read: false,
+          date: serverTimestamp()
+        });
         setIsOffline(false);
       } catch (e) {
         console.error("Cloud Save Failed:", e);
         setIsOffline(true);
       }
     }
+    
+    // 3. Move to Dashboard immediately
     setView('dashboard');
   };
 
@@ -611,6 +386,7 @@ export default function SyntraApp() {
 
   const forceReconnect = () => {
     setIsOffline(false);
+    // Reload current view logic implicitly by state change or could trigger re-fetch
     window.location.reload(); 
   };
 
@@ -626,10 +402,6 @@ export default function SyntraApp() {
           <span className="text-2xl font-bold tracking-tight text-slate-800">Syntra</span>
         </div>
         <div className="flex gap-4 items-center">
-          <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-slate-800 transition-colors">
-            <Settings size={20} />
-          </button>
-          
           {activeUserId && (
             <button onClick={forceReconnect} className={`hidden md:flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full border ${isOffline ? 'text-amber-600 bg-amber-50 border-amber-100 hover:bg-amber-100' : 'text-teal-600 bg-teal-50 border-teal-100'}`}>
               {isOffline ? <WifiOff size={12}/> : <Cloud size={12} />} 
@@ -647,136 +419,14 @@ export default function SyntraApp() {
         </div>
       </nav>
 
-      {showSettings && <SettingsModal t={t} onClose={() => setShowSettings(false)} />}
-
       <main className="pt-24 px-4 h-screen overflow-hidden">
         {view === 'auth' && <AuthScreen t={t} onLogin={handleLoginSuccess} />}
         {view === 'onboarding' && <OnboardingFlow t={t} onComplete={handleProfileComplete} />}
-        {view === 'dashboard' && userProfile && <Dashboard t={t} userId={activeUserId} profile={userProfile} lang={lang} appId={appId} isOffline={isOffline} setIsOffline={setIsOffline} onOpenSettings={() => setShowSettings(true)} />}
+        {view === 'dashboard' && userProfile && <Dashboard t={t} userId={activeUserId} profile={userProfile} lang={lang} appId={appId} isOffline={isOffline} setIsOffline={setIsOffline} />}
       </main>
     </div>
   );
 }
-
-// --- SETTINGS MODAL ---
-const SettingsModal = ({ t, onClose }) => {
-  const [key, setKey] = useState('');
-  const [provider, setProvider] = useState('gemini');
-  const [demoMode, setDemoMode] = useState(false);
-  const [testStatus, setTestStatus] = useState(null); 
-  const [testMsg, setTestMsg] = useState('');
-
-  useEffect(() => {
-    setKey(localStorage.getItem('syntra_api_key') || '');
-    setProvider(localStorage.getItem('syntra_ai_provider') || 'gemini');
-    setDemoMode(localStorage.getItem('syntra_demo_mode') === 'true');
-  }, []);
-
-  const saveSettings = () => {
-    if (key.trim()) {
-      localStorage.setItem('syntra_api_key', key.trim());
-    } else {
-      localStorage.removeItem('syntra_api_key');
-    }
-    localStorage.setItem('syntra_ai_provider', provider);
-    localStorage.setItem('syntra_demo_mode', demoMode);
-    
-    alert(t.save + " " + (testStatus === 'success' ? "OK" : "Done"));
-    window.location.reload();
-  };
-
-  const testConnection = async () => {
-     if (demoMode) {
-         setTestStatus('success');
-         setTestMsg("Demo Mode Active! (No API needed)");
-         return;
-     }
-
-     if (!key.trim()) { setTestMsg("Enter a key first."); return; }
-     setTestStatus('loading');
-     setTestMsg("Testing...");
-     
-     // Temp Save
-     localStorage.setItem('syntra_api_key', key.trim());
-     localStorage.setItem('syntra_ai_provider', provider);
-     
-     const result = await callAI("Say OK");
-     
-     if (result.includes("OK") || result.includes("ok") || result.length > 0) {
-         if (result.startsWith("AI Connection Failed") || result.startsWith("AI Error")) {
-             setTestStatus('error');
-             setTestMsg(result);
-         } else {
-            setTestStatus('success');
-            setTestMsg("Connected!");
-         }
-     } else {
-         setTestStatus('error');
-         setTestMsg("Failed.");
-     }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl animate-in zoom-in-95 overflow-y-auto max-h-[90vh]">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Settings size={20}/> {t.settings}</h2>
-          <button onClick={onClose}><X className="text-slate-400 hover:text-slate-800"/></button>
-        </div>
-        <div className="space-y-6">
-          
-          {/* DEMO MODE TOGGLE */}
-          <div className="p-4 bg-purple-50 rounded-2xl border border-purple-100">
-              <div className="flex justify-between items-center mb-2">
-                  <span className="font-bold text-purple-900 flex items-center gap-2"><Sparkles size={16}/> {t.demo_mode}</span>
-                  <button onClick={() => setDemoMode(!demoMode)} className="text-purple-600 transition-all hover:scale-110">
-                      {demoMode ? <ToggleRight size={32} className="fill-purple-200"/> : <ToggleLeft size={32} className="text-slate-300"/>}
-                  </button>
-              </div>
-              <p className="text-xs text-purple-700 leading-relaxed">{t.demo_note}</p>
-          </div>
-
-          {/* PROVIDER SELECTOR */}
-          <div className={demoMode ? 'opacity-50 pointer-events-none' : ''}>
-              <label className="block text-sm font-bold text-slate-700 mb-2">{t.provider_label}</label>
-              <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => setProvider('gemini')} className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${provider === 'gemini' ? 'bg-teal-50 border-teal-500 text-teal-800' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
-                      <Cloud size={20}/>
-                      <span className="text-xs font-bold">{t.provider_google}</span>
-                  </button>
-                  <button onClick={() => setProvider('openrouter')} className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${provider === 'openrouter' ? 'bg-teal-50 border-teal-500 text-teal-800' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
-                      <Network size={20}/>
-                      <span className="text-xs font-bold">{t.provider_openrouter}</span>
-                  </button>
-              </div>
-              {provider === 'openrouter' && <p className="text-[10px] text-teal-600 mt-2 font-medium">{t.openrouter_note}</p>}
-          </div>
-
-          <div className={demoMode ? 'opacity-50 pointer-events-none' : ''}>
-            <label className="block text-sm font-bold text-slate-700 mb-2">{t.api_key_label}</label>
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3 focus-within:border-teal-500 transition-all">
-              <Key size={18} className="text-slate-400"/>
-              <input type="text" value={key} onChange={e => setKey(e.target.value)} placeholder={t.api_key_placeholder} className="bg-transparent outline-none flex-1 font-mono text-sm" />
-            </div>
-          </div>
-          
-          {testMsg && (
-             <div className={`p-3 rounded-xl text-xs font-bold whitespace-pre-wrap ${testStatus === 'success' ? 'bg-green-100 text-green-700' : testStatus === 'error' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
-                {testMsg}
-             </div>
-          )}
-
-          <div className="flex gap-2 pt-2">
-             <button onClick={testConnection} disabled={testStatus === 'loading'} className="flex-1 bg-teal-50 text-teal-700 py-3 rounded-xl font-bold hover:bg-teal-100 transition-all flex items-center justify-center gap-2">
-                 {testStatus === 'loading' ? <RefreshCw className="animate-spin" size={16}/> : <Zap size={16}/>} Test
-             </button>
-             <button onClick={saveSettings} className="flex-1 bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-all">{t.save}</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // --- AUTH SCREEN ---
 const AuthScreen = ({ t, onLogin }) => {
@@ -791,6 +441,7 @@ const AuthScreen = ({ t, onLogin }) => {
     setError('');
     setIsLoading(true);
     
+    // Basic Validation
     if (!email.includes('@')) { setError(t.email + " invalid."); setIsLoading(false); return; }
     if (password.length < 6) { setError("Password too short."); setIsLoading(false); return; }
 
@@ -803,6 +454,7 @@ const AuthScreen = ({ t, onLogin }) => {
         onLogin(email);
     } catch (err) {
         console.error("Auth Error:", err);
+        // Fallback for demo environments
         if (err.code === 'auth/operation-not-allowed' || err.code === 'auth/admin-restricted-operation') {
              console.warn("Auth disabled, using simulation.");
              setTimeout(() => onLogin(email), 1000); 
@@ -826,6 +478,7 @@ const AuthScreen = ({ t, onLogin }) => {
         const guestId = "guest_" + Math.random().toString(36).substr(2, 9);
         onLogin(guestId);
     } catch (e) {
+        // Strict fallback for no-auth environments
         onLogin("guest_offline");
     } finally {
         setIsLoading(false);
@@ -874,6 +527,7 @@ const OnboardingFlow = ({ t, onComplete }) => {
   const handleEssaySubmit = (essayData) => {
     const finalData = { ...data, ...essayData };
     setStep(3);
+    // Proceed immediately - don't wait for cloud
     onComplete(finalData); 
   };
 
@@ -896,8 +550,63 @@ const OnboardingFlow = ({ t, onComplete }) => {
   );
 };
 
+const SJTTest = ({ t, onComplete }) => {
+  const [current, setCurrent] = useState(0);
+  const handleSelect = () => {
+    if (current < FULL_SJT.length - 1) setCurrent(c => c + 1);
+    else onComplete({ c: 75, o: 65 });
+  };
+  const q = FULL_SJT[current];
+  const progress = ((current + 1) / FULL_SJT.length) * 100;
+  return (
+    <div className="w-full animate-in fade-in duration-500">
+      <div className="w-full bg-slate-200 h-3 rounded-full mb-8 overflow-hidden"><div className="bg-teal-500 h-full transition-all duration-500 ease-out" style={{ width: `${progress}%` }}></div></div>
+      <div className="bg-white p-8 md:p-12 rounded-[2.5rem] shadow-2xl border border-slate-100 relative">
+         <span className="inline-block px-4 py-1.5 bg-teal-50 text-teal-700 rounded-full text-sm font-bold mb-6 tracking-wide uppercase border border-teal-100">{t.scenario} {current + 1} / 40</span>
+         <h3 className="text-2xl font-semibold text-slate-800 mb-8">{t === LANGUAGES.ar ? q.text_ar : q.text_en}</h3>
+         <div className="grid gap-3">
+           {(t === LANGUAGES.ar ? q.options_ar : q.options_en).map((opt, i) => (
+             <button key={i} onClick={handleSelect} className="w-full text-start p-4 rounded-xl border border-slate-200 hover:border-teal-500 hover:bg-teal-50 transition-all font-medium text-slate-600 hover:text-slate-900">{opt}</button>
+           ))}
+         </div>
+      </div>
+    </div>
+  );
+};
+
+const EssayTest = ({ t, onComplete }) => {
+  const [section, setSection] = useState(0); 
+  const [text, setText] = useState('');
+  const [responses, setResponses] = useState({});
+  const prompts = [
+    { title: t.essay_title_c, prompt: t.essay_c, key: 'c_essay' },
+    { title: t.essay_title_o, prompt: t.essay_o, key: 'o_essay' },
+    { title: t.essay_title_free, prompt: t.essay_free, key: 'free_essay' }
+  ];
+  const handleNext = () => {
+    const updated = { ...responses, [prompts[section].key]: text };
+    if (section < prompts.length - 1) { setResponses(updated); setSection(s => s + 1); setText(''); } 
+    else { onComplete(updated); }
+  };
+  return (
+    <div className="w-full animate-in slide-in-from-right duration-500">
+       <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-slate-100 min-h-[500px] flex flex-col relative">
+          <div className="flex justify-between items-center mb-6">
+             <h3 className="text-2xl font-bold text-slate-800">{prompts[section].title}</h3>
+             <div className="flex gap-2">{[0, 1, 2].map(i => <div key={i} className={`h-2 w-8 rounded-full transition-all ${i <= section ? 'bg-teal-500' : 'bg-slate-200'}`} />)}</div>
+          </div>
+          <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-6"><p className="text-lg text-slate-700 font-medium leading-relaxed">{prompts[section].prompt}</p></div>
+          <textarea value={text} onChange={e => setText(e.target.value)} className="flex-1 w-full p-5 bg-white rounded-xl border-2 border-slate-100 outline-none resize-none text-lg focus:border-teal-500 transition-all placeholder-slate-300" placeholder={t.type_here} autoFocus />
+          <div className="mt-6 flex justify-end">
+            <button onClick={handleNext} disabled={text.length < 5} className="bg-slate-900 text-white px-8 py-4 rounded-xl font-bold hover:bg-slate-800 transition-all disabled:opacity-50 flex items-center gap-2">{section === 2 ? t.submit : t.next} <ArrowRight size={18} /></button>
+          </div>
+       </div>
+    </div>
+  );
+};
+
 // --- DASHBOARD ---
-const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline, onOpenSettings }) => {
+const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline }) => {
   const [activeTab, setActiveTab] = useState('chat');
   const [notifications, setNotifications] = useState([]);
   const [showInbox, setShowInbox] = useState(false);
@@ -933,9 +642,9 @@ const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline, o
       </div>
 
       <div className="flex-1 bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden relative flex flex-col">
-        {activeTab === 'chat' && <ChatModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} onOpenSettings={onOpenSettings} />}
-        {activeTab === 'plan' && <PlannerModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} onOpenSettings={onOpenSettings} />}
-        {activeTab === 'journal' && <JournalModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} onOpenSettings={onOpenSettings} />}
+        {activeTab === 'chat' && <ChatModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
+        {activeTab === 'plan' && <PlannerModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
+        {activeTab === 'journal' && <JournalModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
       </div>
 
       {showInbox && (
@@ -965,7 +674,7 @@ const NavIcon = ({ icon, active, onClick }) => (
 
 // --- MODULES ---
 
-const ChatModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSettings }) => {
+const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1003,15 +712,18 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSettings
     setInput('');
     setLoading(true);
 
+    // ALLOW CHAT EVEN IF OFFLINE (Retry Mechanism)
     try {
         if (!isOffline) {
             await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
                 role: 'user', text, createdAt: serverTimestamp()
             });
         } else {
+            // Optimistic UI for offline chat
             setMsgs(prev => [...prev, {id: Date.now(), role: 'user', text}]);
         }
 
+        // Call AI
         const taskListString = currentTasks.map(t => `- ${t.text} (ID: ${t.id})`).join('\n');
         const systemPrompt = `
           IDENTITY: You are "Aura", a sophisticated AI mentor using the BIG-5 personality model.
@@ -1025,23 +737,10 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSettings
              - If existing task matches, DO NOT add duplicate.
         `;
 
-        const aiRaw = await callAI(text, systemPrompt);
-        
-        if (aiRaw === "KEY_MISSING") {
-           onOpenSettings();
-           setMsgs(prev => [...prev, {id: Date.now()+1, role: 'ai', text: "Please set your API Key in Settings to chat."}]);
-           setLoading(false);
-           return;
-        }
-
-        if (aiRaw.startsWith("AI Connection Failed") || aiRaw.startsWith("AI Error")) {
-           setMsgs(prev => [...prev, {id: Date.now()+1, role: 'ai', text: aiRaw}]);
-           setLoading(false);
-           return;
-        }
-
+        const aiRaw = await callGemini(text, systemPrompt);
         let aiText = aiRaw;
         
+        // (Task parsing logic remains the same, but wrapped in try/catch for offline safety)
         const modMatch = aiRaw.match(/\[MOD:\s*(.*?)\s*->\s*(.*?)\]/);
         if (modMatch) {
             const oldText = modMatch[1].trim();
@@ -1083,14 +782,14 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSettings
   return (
     <div className="h-full flex flex-col bg-slate-50/50">
        <div className="flex-1 overflow-y-auto p-8 space-y-6">
-         {msgs.length === 0 && <div className="text-center text-slate-400 mt-20 opacity-50">{t.chat_placeholder}</div>}
-         {msgs.map((m) => (
-           <div key={m.id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
-             <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'}`}>{m.text}</div>
-           </div>
-         ))}
-         {loading && <div className="flex justify-start"><div className="bg-white p-4 rounded-3xl text-slate-400 italic text-sm"><Sparkles size={14} className="animate-spin inline mr-2"/>Aura thinking...</div></div>}
-         <div ref={scrollRef} />
+          {msgs.length === 0 && <div className="text-center text-slate-400 mt-20 opacity-50">{t.chat_placeholder}</div>}
+          {msgs.map((m) => (
+            <div key={m.id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
+              <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'}`}>{m.text}</div>
+            </div>
+          ))}
+          {loading && <div className="flex justify-start"><div className="bg-white p-4 rounded-3xl text-slate-400 italic text-sm"><Sparkles size={14} className="animate-spin inline mr-2"/>Aura thinking...</div></div>}
+          <div ref={scrollRef} />
        </div>
        <div className="p-6 bg-white border-t border-slate-100 flex gap-4">
          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder={t.chat_placeholder} className="flex-1 bg-slate-100 rounded-2xl p-5 outline-none focus:ring-2 focus:ring-teal-500/20 text-lg" />
@@ -1100,7 +799,7 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSettings
   );
 };
 
-const PlannerModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSettings }) => {
+const PlannerModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const [tasks, setTasks] = useState([]);
   const [newTask, setNewTask] = useState('');
   const [isMagicLoading, setIsMagicLoading] = useState(false);
@@ -1148,14 +847,7 @@ const PlannerModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSetti
   const magicBreakdown = async () => {
     if (!newTask.trim()) return;
     setIsMagicLoading(true);
-    const result = await callAI(`Break down goal "${newTask}" into 3 steps. Language: ${lang}. Return steps joined by |||`);
-    
-    if (result === "KEY_MISSING" || result.startsWith("AI Connection Failed")) {
-        onOpenSettings();
-        setIsMagicLoading(false);
-        return;
-    }
-
+    const result = await callGemini(`Break down goal "${newTask}" into 3 steps. Language: ${lang}. Return steps joined by |||`);
     const subtasks = result.split('|||').map(s => s.trim()).filter(s => s);
     for (const st of subtasks) await addTask(st, 'ai-magic');
     setNewTask('');
@@ -1190,18 +882,12 @@ const PlannerModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSetti
   );
 };
 
-const JournalModule = ({ t, userId, lang, appId, isOffline, onOpenSettings }) => {
+const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
   const [entry, setEntry] = useState('');
   const [insight, setInsight] = useState('');
   const analyze = async () => {
     if(entry.length < 10) return;
-    const res = await callAI(`Analyze journal: "${entry}". Give 1 sentence advice in ${lang}.`);
-    
-    if (res === "KEY_MISSING" || res.startsWith("AI Connection Failed")) {
-        onOpenSettings();
-        setInsight("Please check Settings to add API Key.");
-        return;
-    }
+    const res = await callGemini(`Analyze journal: "${entry}". Give 1 sentence advice in ${lang}.`);
     setInsight(res);
   }
   return (
@@ -1216,4 +902,4 @@ const JournalModule = ({ t, userId, lang, appId, isOffline, onOpenSettings }) =>
        {insight && <div className="mt-4 p-6 bg-yellow-50 rounded-3xl border border-yellow-200 text-slate-800 italic">{insight}</div>}
     </div>
   );
-};
+}
