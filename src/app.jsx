@@ -39,8 +39,7 @@ import {
 
 // 1. GEMINI API KEY
 // IMPORTANT: For Vercel Deployment, UNCOMMENT the line below and DELETE the empty string line.
-// const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = {
@@ -52,7 +51,6 @@ const firebaseConfig = {
   appId: "1:858952912964:web:eef39b1b848a0090af2c11",
   measurementId: "G-P3G12J3TTE"
 };
-
 // Initialize Firebase with FORCE LONG POLLING
 // This bypasses many firewall/browser restrictions that cause "Client Offline" errors.
 const app = initializeApp(firebaseConfig);
@@ -88,9 +86,9 @@ const callGemini = async (prompt, systemInstruction = "") => {
       return "AI is currently offline (Key Missing). Please update the code with your API Key.";
   }
   try {
-    // UPDATED ENDPOINT: Switched to 'gemini-pro' (v1.0) which is the most stable/compatible model.
+    // UPDATED ENDPOINT: gemini-1.5-flash (Standard Free Tier Model)
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -104,20 +102,22 @@ const callGemini = async (prompt, systemInstruction = "") => {
     );
     
     if (!response.ok) {
-        // Detailed error logging for debugging
         const errorData = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
         console.error("Gemini API Error:", response.status, errorData);
         
-        if (response.status === 403) return "AI Error: Access Denied (403). Check API Key restrictions.";
-        if (response.status === 404) return "AI Error: Model Not Found (404). Check API endpoint.";
+        // Specific Debug Messages
+        if (response.status === 403) return `AI Error: 403 Forbidden. (Check Google Cloud Console -> API Keys -> Restrictions -> Enable 'Generative Language API')`;
+        if (response.status === 404) return `AI Error: 404 Not Found. (Model not available in this region/version)`;
+        if (response.status === 400) return `AI Error: 400 Bad Request. (${errorData.error?.message})`;
+        
         return `AI Error: ${response.status} - ${errorData.error?.message || "Unknown"}`;
     }
 
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: No response.";
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: No response text.";
   } catch (error) {
     console.error("Gemini Network Error:", error);
-    return "Error: Could not reach AI service (Network).";
+    return "Error: Could not reach AI service (Network Blocked?).";
   }
 };
 
@@ -873,4 +873,3 @@ const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
     </div>
   );
 }
-
