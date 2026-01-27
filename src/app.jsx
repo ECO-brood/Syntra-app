@@ -52,6 +52,7 @@ const firebaseConfig = {
   appId: "1:858952912964:web:eef39b1b848a0090af2c11",
   measurementId: "G-P3G12J3TTE"
 };
+
 // Initialize Firebase with FORCE LONG POLLING
 // This bypasses many firewall/browser restrictions that cause "Client Offline" errors.
 const app = initializeApp(firebaseConfig);
@@ -87,9 +88,9 @@ const callGemini = async (prompt, systemInstruction = "") => {
       return "AI is currently offline (Key Missing). Please update the code with your API Key.";
   }
   try {
-    // UPDATED ENDPOINT: gemini-1.5-flash is the current standard for free tier
+    // UPDATED ENDPOINT: Switched to 'gemini-pro' (v1.0) which is the most stable/compatible model.
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
