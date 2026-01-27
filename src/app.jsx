@@ -5,7 +5,7 @@ import {
   ArrowRight, Sparkles, Send, Plus, Trash2, Smile, 
   Activity, Lightbulb, LogOut, Lock, Mail, UserCircle,
   PenTool, ShieldCheck, Cloud, RefreshCw, MailCheck, Bell,
-  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff
+  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff, Key
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -37,9 +37,31 @@ import {
 
 // --- CONFIGURATION ---
 
-// 1. GEMINI API KEY
-// Ensure this is set in your Vercel Environment Variables as VITE_GEMINI_API_KEY
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
+// 1. ROBUST API KEY LOADER
+// Tries to find the key in standard variable formats (Vite, Next.js, CRA)
+const getEnvApiKey = () => {
+  try {
+    // 1. Local Storage (User Override)
+    const localKey = localStorage.getItem('syntra_api_key');
+    if (localKey) return localKey;
+
+    // 2. Vite
+    if (import.meta && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+      return import.meta.env.VITE_GEMINI_API_KEY;
+    }
+    // 3. Create React App / Webpack
+    if (process.env.REACT_APP_GEMINI_API_KEY) {
+      return process.env.REACT_APP_GEMINI_API_KEY;
+    }
+    // 4. Next.js
+    if (process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
+      return process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    }
+  } catch (e) {
+    console.warn("Environment variable access failed:", e);
+  }
+  return "";
+};
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = {
@@ -52,7 +74,7 @@ const firebaseConfig = {
   measurementId: "G-P3G12J3TTE"
 };
 
-// Initialize Firebase with FORCE LONG POLLING
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = initializeFirestore(app, {
@@ -79,25 +101,24 @@ const getHybridUserId = (email) => {
   return email.toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
 };
 
-// --- GEMINI API HELPER (FIXED) ---
+// --- GEMINI API HELPER (ROBUST VERSION) ---
 const callGemini = async (prompt, systemInstruction = "") => {
-  if (!apiKey || apiKey.includes("PASTE_YOUR")) {
-      console.warn("Gemini API Key is missing or invalid.");
-      return "AI is currently offline (Key Missing). Please check Vercel Environment Variables.";
+  const apiKey = getEnvApiKey();
+
+  if (!apiKey || apiKey.length < 10) {
+      return "KEY_MISSING"; // Special code to trigger UI prompt
   }
 
-  // LIST OF MODELS TO TRY (Fallback Strategy)
-  // If 'flash' 404s, it will try 'pro', then '1.0-pro'
   const models = [
     "gemini-1.5-flash",
     "gemini-1.5-pro",
     "gemini-pro"
   ];
 
+  let errorLog = [];
+
   for (const model of models) {
     try {
-      console.log(`Attempting to connect to model: ${model}...`);
-      
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
@@ -106,7 +127,7 @@ const callGemini = async (prompt, systemInstruction = "") => {
           body: JSON.stringify({
             contents: [{ 
               role: "user",
-              parts: [{ text: `${systemInstruction}\n\nUser: ${prompt}` }] 
+              parts: [{ text: `${systemInstruction ? `SYSTEM: ${systemInstruction}\n\n` : ''}USER: ${prompt}` }] 
             }]
           })
         }
@@ -117,29 +138,20 @@ const callGemini = async (prompt, systemInstruction = "") => {
         return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: No response text.";
       }
 
-      // If 404, we continue the loop to the next model
-      if (response.status === 404) {
-        console.warn(`Model ${model} not found (404). Switching to fallback...`);
-        continue; 
-      }
+      errorLog.push(`${model}: ${response.status}`);
 
-      // If other error, return it immediately
-      const errorData = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
-      if (response.status === 403) return `AI Error: 403 Forbidden. (Check Google Cloud Console -> Enable 'Generative Language API')`;
-      if (response.status === 400) return `AI Error: 400 Bad Request. (${errorData.error?.message})`;
+      if (response.status === 404) continue; // Try next model
       
-      return `AI Error: ${response.status} - ${errorData.error?.message || "Unknown"}`;
+      const errorData = await response.json().catch(() => ({}));
+      if (response.status === 403) return "AI Error: 403 Forbidden. Enable API in Google Cloud.";
+      if (response.status === 400) return `AI Error: 400 Bad Request. ${errorData.error?.message || ''}`;
 
     } catch (error) {
-      console.error(`Network Error on ${model}:`, error);
-      // If it's the last model and still failing, return error
-      if (model === models[models.length - 1]) {
-        return "Error: Could not reach AI service (Network Blocked?).";
-      }
+      errorLog.push(`${model}: Network Error`);
     }
   }
   
-  return "AI Error: All models failed to respond.";
+  return `AI Error: All models failed. Details: [${errorLog.join(', ')}]. Please check Settings -> API Key.`;
 };
 
 // --- LOCALIZATION ---
@@ -187,7 +199,11 @@ const LANGUAGES = {
     task_auto_updated: "Task updated:",
     offline_mode: "Offline",
     reconnect: "Retry",
-    connect_error: "Connection Issue"
+    connect_error: "Connection Issue",
+    settings: "Settings",
+    api_key_label: "Gemini API Key (Optional Override)",
+    api_key_placeholder: "Paste AIza... here",
+    save: "Save"
   },
   ar: {
     welcome: "مرحباً بك في سينترا",
@@ -232,7 +248,11 @@ const LANGUAGES = {
     task_auto_updated: "تم تعديل:",
     offline_mode: "غير متصل",
     reconnect: "إعادة المحاولة",
-    connect_error: "مشكلة في الاتصال"
+    connect_error: "مشكلة في الاتصال",
+    settings: "الإعدادات",
+    api_key_label: "مفتاح API (اختياري)",
+    api_key_placeholder: "ضع المفتاح هنا...",
+    save: "حفظ"
   }
 };
 
@@ -253,6 +273,7 @@ export default function SyntraApp() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('auth'); 
   const [isOffline, setIsOffline] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const t = LANGUAGES[lang];
   const isRTL = lang === 'ar';
@@ -261,7 +282,6 @@ export default function SyntraApp() {
     const init = async () => {
       const storedEmail = localStorage.getItem('syntra_user_email');
       
-      // Attempt anonymous auth if not logged in
       if (!auth.currentUser) {
         await signInAnonymously(auth).catch(() => {
             console.warn("Offline: Auth failed.");
@@ -287,7 +307,6 @@ export default function SyntraApp() {
         } catch (e) {
           console.error("Init Error:", e);
           setIsOffline(true);
-          // FALLBACK: Load MOCK PROFILE only on error so user can still see UI
           setUserProfile(MOCK_PROFILE); 
           setView('dashboard');
         }
@@ -324,7 +343,6 @@ export default function SyntraApp() {
     } catch (e) {
       console.error("Login Error:", e);
       setIsOffline(true);
-      // Try to load dashboard anyway with fallback if error
       setUserProfile(MOCK_PROFILE);
       setView('dashboard');
     }
@@ -332,10 +350,8 @@ export default function SyntraApp() {
   };
 
   const handleProfileComplete = async (profileData) => {
-    // 1. Set local state immediately
     setUserProfile(profileData);
     
-    // 2. Try to save to cloud (Fire & Forget)
     if (activeUserId && !isOffline) {
       try {
         await setDoc(doc(db, 'artifacts', appId, 'users', activeUserId, 'data', 'profile'), {
@@ -350,20 +366,20 @@ export default function SyntraApp() {
            Mention their traits (C:${profileData.c_score}, O:${profileData.o_score}). Language: ${lang}.`
         );
         
-        await addDoc(collection(db, 'artifacts', appId, 'users', activeUserId, 'inbox'), {
-          subject: t.welcome_subject,
-          body: emailBody,
-          read: false,
-          date: serverTimestamp()
-        });
+        if (emailBody !== "KEY_MISSING") {
+           await addDoc(collection(db, 'artifacts', appId, 'users', activeUserId, 'inbox'), {
+             subject: t.welcome_subject,
+             body: emailBody,
+             read: false,
+             date: serverTimestamp()
+           });
+        }
         setIsOffline(false);
       } catch (e) {
         console.error("Cloud Save Failed:", e);
         setIsOffline(true);
       }
     }
-    
-    // 3. Move to Dashboard immediately
     setView('dashboard');
   };
 
@@ -377,7 +393,6 @@ export default function SyntraApp() {
 
   const forceReconnect = () => {
     setIsOffline(false);
-    // Reload current view logic implicitly by state change or could trigger re-fetch
     window.location.reload(); 
   };
 
@@ -393,6 +408,10 @@ export default function SyntraApp() {
           <span className="text-2xl font-bold tracking-tight text-slate-800">Syntra</span>
         </div>
         <div className="flex gap-4 items-center">
+          <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-slate-800 transition-colors">
+            <Settings size={20} />
+          </button>
+          
           {activeUserId && (
             <button onClick={forceReconnect} className={`hidden md:flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full border ${isOffline ? 'text-amber-600 bg-amber-50 border-amber-100 hover:bg-amber-100' : 'text-teal-600 bg-teal-50 border-teal-100'}`}>
               {isOffline ? <WifiOff size={12}/> : <Cloud size={12} />} 
@@ -410,14 +429,59 @@ export default function SyntraApp() {
         </div>
       </nav>
 
+      {showSettings && <SettingsModal t={t} onClose={() => setShowSettings(false)} />}
+
       <main className="pt-24 px-4 h-screen overflow-hidden">
         {view === 'auth' && <AuthScreen t={t} onLogin={handleLoginSuccess} />}
         {view === 'onboarding' && <OnboardingFlow t={t} onComplete={handleProfileComplete} />}
-        {view === 'dashboard' && userProfile && <Dashboard t={t} userId={activeUserId} profile={userProfile} lang={lang} appId={appId} isOffline={isOffline} setIsOffline={setIsOffline} />}
+        {view === 'dashboard' && userProfile && <Dashboard t={t} userId={activeUserId} profile={userProfile} lang={lang} appId={appId} isOffline={isOffline} setIsOffline={setIsOffline} onOpenSettings={() => setShowSettings(true)} />}
       </main>
     </div>
   );
 }
+
+// --- SETTINGS MODAL ---
+const SettingsModal = ({ t, onClose }) => {
+  const [key, setKey] = useState('');
+  
+  useEffect(() => {
+    setKey(localStorage.getItem('syntra_api_key') || '');
+  }, []);
+
+  const saveKey = () => {
+    if (key.trim()) {
+      localStorage.setItem('syntra_api_key', key.trim());
+      alert("API Key Saved! The app will now use this key.");
+      window.location.reload();
+    } else {
+      localStorage.removeItem('syntra_api_key');
+      alert("API Key Removed. App will try to use Environment Variables.");
+      window.location.reload();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl animate-in zoom-in-95">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Settings size={20}/> {t.settings}</h2>
+          <button onClick={onClose}><X className="text-slate-400 hover:text-slate-800"/></button>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">{t.api_key_label}</label>
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3 focus-within:border-teal-500 transition-all">
+              <Key size={18} className="text-slate-400"/>
+              <input type="text" value={key} onChange={e => setKey(e.target.value)} placeholder={t.api_key_placeholder} className="bg-transparent outline-none flex-1 font-mono text-sm" />
+            </div>
+            <p className="text-xs text-slate-400 mt-2">Required if Environment Variables are not set. Saved locally in your browser.</p>
+          </div>
+          <button onClick={saveKey} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-all">{t.save}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // --- AUTH SCREEN ---
 const AuthScreen = ({ t, onLogin }) => {
@@ -432,7 +496,6 @@ const AuthScreen = ({ t, onLogin }) => {
     setError('');
     setIsLoading(true);
     
-    // Basic Validation
     if (!email.includes('@')) { setError(t.email + " invalid."); setIsLoading(false); return; }
     if (password.length < 6) { setError("Password too short."); setIsLoading(false); return; }
 
@@ -445,7 +508,6 @@ const AuthScreen = ({ t, onLogin }) => {
         onLogin(email);
     } catch (err) {
         console.error("Auth Error:", err);
-        // Fallback for demo environments
         if (err.code === 'auth/operation-not-allowed' || err.code === 'auth/admin-restricted-operation') {
              console.warn("Auth disabled, using simulation.");
              setTimeout(() => onLogin(email), 1000); 
@@ -469,7 +531,6 @@ const AuthScreen = ({ t, onLogin }) => {
         const guestId = "guest_" + Math.random().toString(36).substr(2, 9);
         onLogin(guestId);
     } catch (e) {
-        // Strict fallback for no-auth environments
         onLogin("guest_offline");
     } finally {
         setIsLoading(false);
@@ -518,7 +579,6 @@ const OnboardingFlow = ({ t, onComplete }) => {
   const handleEssaySubmit = (essayData) => {
     const finalData = { ...data, ...essayData };
     setStep(3);
-    // Proceed immediately - don't wait for cloud
     onComplete(finalData); 
   };
 
@@ -597,7 +657,7 @@ const EssayTest = ({ t, onComplete }) => {
 };
 
 // --- DASHBOARD ---
-const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline }) => {
+const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline, onOpenSettings }) => {
   const [activeTab, setActiveTab] = useState('chat');
   const [notifications, setNotifications] = useState([]);
   const [showInbox, setShowInbox] = useState(false);
@@ -633,9 +693,9 @@ const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline })
       </div>
 
       <div className="flex-1 bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden relative flex flex-col">
-        {activeTab === 'chat' && <ChatModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
-        {activeTab === 'plan' && <PlannerModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
-        {activeTab === 'journal' && <JournalModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
+        {activeTab === 'chat' && <ChatModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} onOpenSettings={onOpenSettings} />}
+        {activeTab === 'plan' && <PlannerModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} onOpenSettings={onOpenSettings} />}
+        {activeTab === 'journal' && <JournalModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} onOpenSettings={onOpenSettings} />}
       </div>
 
       {showInbox && (
@@ -665,7 +725,7 @@ const NavIcon = ({ icon, active, onClick }) => (
 
 // --- MODULES ---
 
-const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
+const ChatModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSettings }) => {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -703,18 +763,15 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     setInput('');
     setLoading(true);
 
-    // ALLOW CHAT EVEN IF OFFLINE (Retry Mechanism)
     try {
         if (!isOffline) {
             await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
                 role: 'user', text, createdAt: serverTimestamp()
             });
         } else {
-            // Optimistic UI for offline chat
             setMsgs(prev => [...prev, {id: Date.now(), role: 'user', text}]);
         }
 
-        // Call AI
         const taskListString = currentTasks.map(t => `- ${t.text} (ID: ${t.id})`).join('\n');
         const systemPrompt = `
           IDENTITY: You are "Aura", a sophisticated AI mentor using the BIG-5 personality model.
@@ -729,9 +786,16 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
         `;
 
         const aiRaw = await callGemini(text, systemPrompt);
+        
+        if (aiRaw === "KEY_MISSING") {
+           onOpenSettings();
+           setMsgs(prev => [...prev, {id: Date.now()+1, role: 'ai', text: "Please set your API Key in Settings to chat."}]);
+           setLoading(false);
+           return;
+        }
+
         let aiText = aiRaw;
         
-        // (Task parsing logic remains the same, but wrapped in try/catch for offline safety)
         const modMatch = aiRaw.match(/\[MOD:\s*(.*?)\s*->\s*(.*?)\]/);
         if (modMatch) {
             const oldText = modMatch[1].trim();
@@ -790,7 +854,7 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   );
 };
 
-const PlannerModule = ({ t, userId, lang, profile, appId, isOffline }) => {
+const PlannerModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSettings }) => {
   const [tasks, setTasks] = useState([]);
   const [newTask, setNewTask] = useState('');
   const [isMagicLoading, setIsMagicLoading] = useState(false);
@@ -839,6 +903,13 @@ const PlannerModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     if (!newTask.trim()) return;
     setIsMagicLoading(true);
     const result = await callGemini(`Break down goal "${newTask}" into 3 steps. Language: ${lang}. Return steps joined by |||`);
+    
+    if (result === "KEY_MISSING" || result.startsWith("AI Error")) {
+        onOpenSettings();
+        setIsMagicLoading(false);
+        return;
+    }
+
     const subtasks = result.split('|||').map(s => s.trim()).filter(s => s);
     for (const st of subtasks) await addTask(st, 'ai-magic');
     setNewTask('');
@@ -873,12 +944,18 @@ const PlannerModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   );
 };
 
-const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
+const JournalModule = ({ t, userId, lang, appId, isOffline, onOpenSettings }) => {
   const [entry, setEntry] = useState('');
   const [insight, setInsight] = useState('');
   const analyze = async () => {
     if(entry.length < 10) return;
     const res = await callGemini(`Analyze journal: "${entry}". Give 1 sentence advice in ${lang}.`);
+    
+    if (res === "KEY_MISSING" || res.startsWith("AI Error")) {
+        onOpenSettings();
+        setInsight("Please check Settings to add API Key.");
+        return;
+    }
     setInsight(res);
   }
   return (
