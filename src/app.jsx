@@ -38,7 +38,7 @@ import {
 // --- CONFIGURATION ---
 
 // 1. GEMINI API KEY
-// const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
+// For Vercel: const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
 const apiKey = "AIzaSyAnLsbC_xqGAh-XnRcHw8kyTD8B_GX0_Vw"; 
 
 // 2. FIREBASE CONFIGURATION
@@ -77,8 +77,8 @@ const getHybridUserId = (email) => {
 // --- GEMINI API HELPER (SMART FALLBACK) ---
 const callGemini = async (prompt, systemInstruction = "") => {
   if (!apiKey || apiKey.includes("PASTE_YOUR")) {
-      console.warn("Gemini API Key missing.");
-      return "AI Offline: Key missing.";
+      console.warn("Gemini API Key missing or placeholder detected.");
+      return "System Alert: API Key is missing in the code. Please update src/App.jsx.";
   }
 
   // List of models to try in order of preference
@@ -86,6 +86,7 @@ const callGemini = async (prompt, systemInstruction = "") => {
 
   for (const model of models) {
     try {
+      console.log(`Attempting connection with model: ${model}...`);
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
@@ -102,15 +103,16 @@ const callGemini = async (prompt, systemInstruction = "") => {
       
       if (response.ok) {
         const data = await response.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: No text.";
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI Error: Received empty response.";
       } else {
-        console.warn(`Model ${model} failed with ${response.status}. Trying next...`);
+        const errData = await response.json().catch(() => ({}));
+        console.warn(`Model ${model} failed with ${response.status}:`, errData);
       }
     } catch (e) {
       console.error(`Network error on ${model}:`, e);
     }
   }
-  return "AI Connection Failed. Please check internet & API Key.";
+  return "Connection Failed: Unable to reach Google AI. Please check your internet connection and API Key permissions.";
 };
 
 // --- LOCALIZATION ---
@@ -210,48 +212,86 @@ const LANGUAGES = {
 // --- FULL 40 UNIQUE SJT QUESTIONS (20 C, 20 O) ---
 const FULL_SJT = [
     // --- CONSCIENTIOUSNESS (20 Items) ---
-    { id: 1, trait: 'C', text_en: "You have a massive pile of homework due tomorrow, but friends invited you out.", text_ar: "وراك واجبات كتير لبكره بس صحابك عزموك تخرج.", options_en: ["Decline and finish work.", "Go for 1 hour then work.", "Take books with me.", "Go and copy later."], options_ar: ["أعتذر وأخلص اللي ورايا.", "أنزل ساعة وأرجع أكمل.", "آخد كتبي معايا.", "أنزل وأنقل الواجب بعدين."] },
-    { id: 2, trait: 'C', text_en: "Your desk is extremely messy.", text_ar: "مكتبك مكركب جداً.", options_en: ["Clean immediately.", "Push mess aside.", "Work in the mess.", "Clean next week."], options_ar: ["أنضفه فوراً.", "أوسع مكان وأقعد.", "أشتغل وسط الكركبة.", "أنضفه الأسبوع الجاي."] },
-    { id: 3, trait: 'C', text_en: "You planned to wake up at 6 AM to study.", text_ar: "خططت تصحى ٦ الصبح تذاكر.", options_en: ["Wake up at 5:55 AM.", "Snooze once then get up.", "Sleep till noon.", "Study at night instead."], options_ar: ["أصحى ٥:٥٥.", "أغفل ٥ دقايق وأقوم.", "أراحت عليا نومة.", "أذاكر بالليل وخلاص."] },
-    { id: 4, trait: 'C', text_en: "You found a small mistake in your exam that gave you extra marks.", text_ar: "لقيت غلطة في التصحيح زودتك درجات.", options_en: ["Tell the teacher.", "Keep quiet.", "Tell friends only.", "Ignore it."], options_ar: ["أقول للمدرس.", "أسكت.", "أقول لصحابي بس.", "أطنش."] },
-    { id: 5, trait: 'C', text_en: "You have a project due in 2 months.", text_ar: "عندك مشروع يتسلم بعد شهرين.", options_en: ["Start planning today.", "Start in a month.", "Start next week.", "Do it the night before."], options_ar: ["أخطط من النهاردة.", "أبدأ كمان شهر.", "أبدأ الأسبوع الجاي.", "أعمله ليلة التسليم."] },
-    { id: 6, trait: 'C', text_en: "You made a to-do list for the day.", text_ar: "عملت قائمة مهام لليوم.", options_en: ["Finish everything perfectly.", "Finish most items.", "Forget the list.", "Do unrelated things."], options_ar: ["أخلص كله بالمسطرة.", "أخلص المعظم.", "أنسى القائمة.", "أعمل حاجات تانية."] },
-    { id: 7, trait: 'C', text_en: "You borrow a book from a friend.", text_ar: "استلفت كتاب من صاحبك.", options_en: ["Return it early.", "Return on time.", "Return when asked.", "Forget I have it."], options_ar: ["أرجعه بدري.", "أرجعه في ميعاده.", "أرجعه لما يطلبه.", "أنسى إنه معايا."] },
-    { id: 8, trait: 'C', text_en: "You are doing a group project.", text_ar: "بتعمل مشروع جماعي.", options_en: ["Organize everyone's tasks.", "Do my part only.", "Wait for instructions.", "Let others do the work."], options_ar: ["أنظم مهام الكل.", "أعمل جزئي بس.", "أستنى التعليمات.", "أسيبهم يشتغلوا هما."] },
-    { id: 9, trait: 'C', text_en: "A boring but important lecture.", text_ar: "حصة مهمة بس مملة.", options_en: ["Take detailed notes.", "Listen passively.", "Doodle.", "Sleep."], options_ar: ["أكتب كل كلمة.", "أسمع وخلاص.", "أشخبط.", "أنام."] },
-    { id: 10, trait: 'C', text_en: "You promised to call your grandma.", text_ar: "وعدت تكلم جدتك.", options_en: ["Call exactly on time.", "Call slightly late.", "Text instead.", "Forget completely."], options_ar: ["أكلمها في الميعاد بالظبط.", "أتأخر شوية.", "أبعت رسالة.", "أنسى."] },
-    { id: 11, trait: 'C', text_en: "Buying a new phone.", text_ar: "هتشتري موبايل جديد.", options_en: ["Research specs for weeks.", "Ask a friend.", "Buy what looks cool.", "Impulse buy."], options_ar: ["أبحث أسابيع.", "أسأل صاحبي.", "أجيب اللي شكله حلو.", "أشتري أي حاجة."] },
-    { id: 12, trait: 'C', text_en: "You receive an email requiring a reply.", text_ar: "جالك إيميل محتاج رد.", options_en: ["Reply instantly.", "Reply same day.", "Reply next week.", "Forget to reply."], options_ar: ["أرد فوراً.", "أرد في نفس اليوم.", "أرد الأسبوع الجاي.", "أنسى أرد."] },
-    { id: 13, trait: 'C', text_en: "Following a diet/exercise plan.", text_ar: "ماشي على نظام غذائي.", options_en: ["Stick to it 100%.", "Cheat once a week.", "Cheat often.", "Quit after 2 days."], options_ar: ["ألتزم ١٠٠٪.", "ألخبط مرة في الأسبوع.", "ألخبط كتير.", "أبطل بعد يومين."] },
-    { id: 14, trait: 'C', text_en: "Your room cleanliness.", text_ar: "نظافة أوضتك.", options_en: ["Always spotless.", "Mostly clean.", "Cluttered.", "Disaster zone."], options_ar: ["دايماً بتلمع.", "نضيفة نوعاً ما.", "مكركبة.", "منطقة كوارث."] },
-    { id: 15, trait: 'C', text_en: "Being on time for appointments.", text_ar: "مواعيدك.", options_en: ["Always 10 mins early.", "Exactly on time.", "5 mins late.", "Always late."], options_ar: ["دايماً بدري ١٠ دقايق.", "على الميعاد بالظبط.", "متأخر ٥ دقايق.", "دايماً متأخر."] },
-    { id: 16, trait: 'C', text_en: "Double-checking your work.", text_ar: "مراجعة شغلك.", options_en: ["Check 3 times.", "Check once.", "Quick glance.", "Submit without checking."], options_ar: ["أراجع ٣ مرات.", "أراجع مرة.", "بصة سريعة.", "أسلم من غير مراجعة."] },
-    { id: 17, trait: 'C', text_en: "Paying attention to details.", text_ar: "التركيز في التفاصيل.", options_en: ["Notice everything.", "Notice important things.", "Miss small details.", "Miss big details."], options_ar: ["باخد بالي من كل فسفوسة.", "بركز في المهم.", "بتفوتني حاجات صغيرة.", "أنا ضايع في التفاصيل."] },
-    { id: 18, trait: 'C', text_en: "Setting yearly goals.", text_ar: "أهداف السنة الجديدة.", options_en: ["Write detailed plan.", "Have a general idea.", "Decide as I go.", "No goals."], options_ar: ["أكتب خطة مفصلة.", "فكرة عامة.", "حسب التساهيل.", "مفيش أهداف."] },
-    { id: 19, trait: 'C', text_en: "Organizing computer files.", text_ar: "تنظيم ملفات الكمبيوتر.", options_en: ["Folders within folders.", "One desktop folder.", "All on desktop.", "Cannot find anything."], options_ar: ["فولدرات جوه فولدرات.", "فولدر واحد مجمع.", "كله على سطح المكتب.", "مش لاقي حاجة."] },
-    { id: 20, trait: 'C', text_en: "Handling a difficult task.", text_ar: "مهمة صعبة.", options_en: ["Break it down and start.", "Procrastinate then start.", "Ask someone else.", "Avoid it."], options_ar: ["أقسمها وأبدأ.", "أسوف شوية وأبدأ.", "أخلي حد يعملها.", "أهرب منها."] },
+    { id: 1, trait: 'C', text_en: "It's Thursday evening, and you have a major biology assignment due on Monday morning. Your friends just messaged you in the group chat about a spontaneous weekend trip to the beach that starts tomorrow morning. You haven't started the assignment yet.", text_ar: "النهارده الخميس بالليل، وعندك واجب أحياء كبير لازم يتسلم الاثنين الصبح. صحابك بعتولك على الجروب إنهم طالعين رحلة للعين السخنة بكرة الصبح، وأنت لسه مابدأتش في الواجب خالص.", options_en: ["Decline the trip immediately to ensure the assignment is finished with high quality.", "Go on the trip but wake up early Sunday to rush through the work.", "Take your laptop and books with you, planning to work during the trip.", "Go on the trip and decide to copy the assignment from a friend later."], options_ar: ["أعتذر عن الرحلة فوراً عشان أضمن إني أخلص الواجب بجودة عالية.", "أطلع الرحلة بس أصحى بدري يوم الأحد أكروته.", "آخد اللابتوب والكتب معايا بنية إني أذاكر هناك.", "أطلع الرحلة وأبقى أنقل الواجب من حد صاحبي بعدين."] },
+    
+    { id: 2, trait: 'C', text_en: "You look at your study desk. It is currently covered in old papers, empty snack wrappers, and random cables from last week. You need to start studying for an upcoming math test.", text_ar: "بصيت على مكتبك لقيته مليان ورق قديم، أكياس شيبسي فاضية، وكابلات مرمية من الأسبوع اللي فات. وأنت محتاج تبدأ مذاكرة عشان امتحان الرياضة.", options_en: ["Spend 15 minutes organizing and cleaning everything before opening a single book.", "Push the mess to the side to create a small working space and start immediately.", "Decide to study on your bed instead to avoid dealing with the mess.", "Leave it as is; the chaos doesn't bother you and you start studying."], options_ar: ["أضيع ربع ساعة أنضف وأرتب كل حاجة قبل ما أفتح كتاب.", "أزق الكركبة على جنب عشان أعمل مساحة صغيرة وأبدأ.", "أقرر أذاكر على السرير عشان ماليش مزاج للكركبة دي.", "أسيبه زي ما هو، الدوشة مش بتضايقني وأبدأ مذاكرة."] },
+
+    { id: 3, trait: 'C', text_en: "You set a goal two weeks ago to wake up at 6:00 AM every day to review your notes before school. Your alarm goes off at 6:00 AM today.", text_ar: "كنت حاطط هدف من أسبوعين إنك تصحى الساعة ٦ الصبح كل يوم تراجع قبل المدرسة. المنبه رن الساعة ٦ النهاردة.", options_en: ["Wake up immediately without hesitation, as per the plan.", "Hit snooze once, but get up within 10 minutes.", "Turn off the alarm and sleep until the last possible minute.", "Decide that studying at night is better and change the plan completely."], options_ar: ["أقوم فوراً من غير تردد زي ما خططت.", "أعمل غفوة (Snooze) مرة واحدة بس أقوم بعدها بـ ١٠ دقايق.", "أطفي المنبه وأكمل نوم لآخر لحظة ممكنة.", "أقرر إن المذاكرة بالليل أحسن وأغير الخطة تماماً."] },
+
+    { id: 4, trait: 'C', text_en: "While reviewing your graded chemistry exam, you notice the teacher gave you 5 extra marks by mistake on a question you actually got wrong.", text_ar: "وأنت بتراجع ورقة امتحان الكيمياء بعد التصحيح، لاحظت إن المدرس إداك ٥ درجات زيادة بالغلط على سؤال أنت أصلاً حليته غلط.", options_en: ["Go to the teacher immediately after class and inform them of the mistake.", "Feel guilty about it but decide not to say anything to keep the grade.", "Tell your friends about your luck but definitely keep the marks.", "Ignore it completely; it's the teacher's fault, not yours."], options_ar: ["أروح للمدرس فوراً بعد الحصة وأعرفه الغلطة.", "أحس بالذنب بس أقرر إني مقولش حاجة عشان أحافظ على الدرجة.", "أقول لصحابي على حظي الحلو بس أكيد هحتفظ بالدرجات.", "أطنش الموضوع تماماً؛ دي غلطة المدرس مش غلطتي."] },
+
+    { id: 5, trait: 'C', text_en: "A long-term history project is assigned today, and it is due in exactly two months. It requires significant research and writing.", text_ar: "المدرس طلب مشروع تاريخ كبير النهاردة، وميعاد تسليمه كمان شهرين بالظبط. المشروع محتاج بحث وكتابة كتير.", options_en: ["Create a weekly timeline today breaking down the research and writing phases.", "Make a mental note to start it next month.", "Wait until the deadline is much closer, like one week before.", "Plan to do an 'all-nighter' right before the due date."], options_ar: ["أعمل جدول زمني أسبوعي من النهاردة أقسم فيه مراحل البحث والكتابة.", "أحط في دماغي إني أبقى أبدأ فيه الشهر الجاي.", "أستنى لما الميعاد يقرب أوي، مثلاً قبلها بأسبوع.", "أخطط إني أسهر عليه ليلة التسليم وأخلصه مرة واحدة."] },
+
+    { id: 6, trait: 'C', text_en: "You created a daily to-do list with 5 items. By 8 PM, you have finished 3 of them, but you are feeling quite tired.", text_ar: "عملت قائمة مهام لليوم فيها ٥ حاجات. الساعة جت ٨ بالليل وأنت خلصت ٣ بس، وحاسس إنك تعبان شوية.", options_en: ["Push through the fatigue to finish the last 2 items because the list must be completed.", "Finish one more item and move the last one to tomorrow's list.", "Stop working immediately and relax for the rest of the night.", "Give up on the list and play video games instead."], options_ar: ["أضغط على نفسي وأخلص الحاجتين الباقيين عشان لازم القائمة تخلص.", "أخلص حاجة كمان وأرحل الأخيرة لبكره.", "أوقف شغل فوراً وأنتخ بقية الليلة.", "أفكني من القائمة خالص وأقوم ألعب."] },
+
+    { id: 7, trait: 'C', text_en: "You borrowed a novel from a friend and promised to return it by this Friday. You haven't finished reading it yet.", text_ar: "استلفت رواية من صاحبك ووعدته ترجعها يوم الجمعة ده. أنت لسه مخلصتش قرايتها.", options_en: ["Return it on Friday as promised, even if unread, or ask politely for an extension.", "Keep it until you finish reading, then return it whenever.", "Wait for them to ask for it back before returning it.", "Forget you even have the book until they remind you."], options_ar: ["أرجعها يوم الجمعة زي ما وعدت حتى لو مخلصتش، أو أستأذنه بذوق في وقت زيادة.", "أخليها معايا لحد ما أخلصها، وأبقى أرجعها في أي وقت.", "أستنى لما هو يطلبها الأول قبل ما أرجعها.", "أنسى أصلاً إن الكتاب معايا لحد ما هو يفكرني."] },
+
+    { id: 8, trait: 'C', text_en: "You are assigned to a group project with three other students. No one is taking charge, and the deadline is approaching.", text_ar: "اتحطيت في مجموعة من ٣ طلاب لمشروع. مفيش حد بيتحرك أو بياخد القيادة، وميعاد التسليم بيقرب.", options_en: ["Step up, assign roles to everyone, and create a schedule to ensure completion.", "Do your own part perfectly and hope the others figure it out.", "Wait for someone else to tell you what to do.", "Relax and assume the group will eventually panic and do it."], options_ar: ["أتدخل أنا، وأوزع الأدوار على الكل، وأعمل جدول عشان نضمن إننا نخلص.", "أعمل جزئي أنا بامتياز وأتمنى الباقيين يتصرفوا.", "أستنى حد تاني يقولي أعمل إيه.", "أكبر دماغي وأفترض إننا هنتزنق في الآخر ونعمله."] },
+
+    { id: 9, trait: 'C', text_en: "You are attending a lecture that is extremely boring, but the teacher says the material is critical for the final exam.", text_ar: "أنت قاعد في حصة مملة جداً، بس المدرس قال إن الكلام ده مهم جداً للامتحان النهائي.", options_en: ["Force yourself to take detailed notes and stay focused despite the boredom.", "Listen passively without writing anything down.", "Start doodling in your notebook to pass the time.", "Put your head down and take a nap."], options_ar: ["أجبر نفسي أكتب ملاحظات بالتفصيل وأركز رغم الملل.", "أسمع وخلاص من غير ما أكتب حاجة.", "أبدأ أشخبط في الكشكول عشان الوقت يعدي.", "أريح راسي على الديسك وأنام."] },
+
+    { id: 10, trait: 'C', text_en: "You promised your grandmother you would call her at 5:00 PM today. You are in the middle of a fun game.", text_ar: "وعدت جدتك إنك هتكلمها الساعة ٥ المغرب النهاردة. الساعة جت ٥ وأنت وسط جيم جامد.", options_en: ["Pause the game exactly at 5:00 PM to make the call.", "Finish the round quickly and call her at 5:15 PM.", "Send a text message instead of calling.", "Forget about the call entirely."], options_ar: ["أوقف اللعب الساعة ٥ بالظبط عشان أكلمها.", "أخلص الجيم ده بسرعة وأكلمها ٥ وربع.", "أبعتلها رسالة بدل ما أتصل.", "أنسى المكالمة خالص."] },
+
+    { id: 11, trait: 'C', text_en: "You need to buy a new laptop for school. There are many options available.", text_ar: "محتاج تشتري لابتوب جديد للمدرسة. وفيه اختيارات كتير جداً قدامك.", options_en: ["Research specifications for weeks, compare prices, and read reviews before buying.", "Ask a tech-savvy friend and just buy whatever they recommend.", "Go to the store and buy the one that looks the coolest.", "Buy the first one you see on sale without checking details."], options_ar: ["أبحث في المواصفات لأسابيع، وأقارن الأسعار، وأقرا مراجعات قبل ما أشتري.", "أسأل صاحبي اللي بيفهم وأشتري اللي يقول عليه وخلاص.", "أروح المحل وأشتري اللي شكله أحلى واحد.", "أشتري أول واحد يقابلني عليه عرض من غير ما أشوف تفاصيله."] },
+
+    { id: 12, trait: 'C', text_en: "You receive an email from a teacher asking for a missing document. It requires a 5-minute task to find and send it.", text_ar: "جالك إيميل من مدرس بيطلب ملف ناقص. الموضوع محتاج ٥ دقايق تدوير عشان تبعته.", options_en: ["Stop what you are doing and reply immediately to get it done.", "Mark it as unread and plan to do it later tonight.", "Leave it for the weekend.", "Forget about the email until the teacher asks again."], options_ar: ["أوقف اللي في إيدي وأرد حالاً عشان أخلص.", "أعلمه كـ 'غير مقروء' وأخطط أعمله بالليل.", "أسيبه للأجازة.", "أنسى الإيميل لحد ما المدرس يطلبه تاني."] },
+
+    { id: 13, trait: 'C', text_en: "You have decided to start a healthy eating plan to improve your energy.", text_ar: "قررت تبدأ نظام أكل صحي عشان تحسن نشاطك.", options_en: ["Stick to the plan strictly, meal prepping every day.", "Follow it mostly, but allow 'cheat meals' on weekends.", "Follow it for two days then go back to fast food.", "Quit the plan the moment you see a pizza."], options_ar: ["ألتزم بالنظام بصرامة، وأجهز وجباتي كل يوم.", "أمشى عليه في الغالب، بس ألخبط في الأجازة.", "أمشى عليه يومين وأرجع للوجبات السريعة.", "أبطل النظام أول ما أشوف بيتزا."] },
+
+    { id: 14, trait: 'C', text_en: "How would you describe the current state of your bedroom?", text_ar: "توصف حالة أوضتك دلوقتي بإيه؟", options_en: ["Immaculate; everything has a specific place.", "Generally tidy, with maybe one or two things out of place.", "Cluttered, but I know where things are.", "A disaster zone; clothes are everywhere."], options_ar: ["زي الفل؛ كل حاجة ليها مكان محدد.", "نضيفة عموماً، ممكن حاجة أو اتنين مش في مكانهم.", "مكركبة، بس أنا عارف مكان حاجتي.", "منطقة كوارث؛ الهدوم في كل حتة."] },
+
+    { id: 15, trait: 'C', text_en: "You have a doctor's appointment at 4:00 PM. It takes 20 minutes to get there.", text_ar: "عندك ميعاد دكتور الساعة ٤. المشوار بياخد ٢٠ دقيقة.", options_en: ["Leave at 3:30 PM to arrive early just in case.", "Leave exactly at 3:40 PM to arrive on the dot.", "Leave at 3:45 PM and hope traffic is light.", "Leave at 4:00 PM and apologize for being late."], options_ar: ["أنزل ٣:٣٠ عشان أوصل بدري احتياطي.", "أنزل ٣:٤٠ بالظبط عشان أوصل عالميعاد.", "أنزل ٣:٤٥ وأتمنى الطريق يكون فاضي.", "أنزل الساعة ٤ وأبقى أعتذر عن التأخير."] },
+
+    { id: 16, trait: 'C', text_en: "You finish your exam paper 20 minutes before the time is up.", text_ar: "خلصت ورقة الامتحان قبل الوقت ما يخلص بـ ٢٠ دقيقة.", options_en: ["Spend the entire 20 minutes checking every answer twice.", "Check the answers once then hand it in.", "Glance over it quickly and leave.", "Hand it in immediately and leave the room."], options_ar: ["أقضي الـ ٢٠ دقيقة أراجع كل إجابة مرتين.", "أراجع الإجابات مرة واحدة وأسلم.", "أبص بصة سريعة وأمشي.", "أسلم الورقة فوراً وأخرج."] },
+
+    { id: 17, trait: 'C', text_en: "You are building a model for science class. The instructions are long and detailed.", text_ar: "بتعمل مجسم لحصة العلوم. التعليمات طويلة ومفصلة جداً.", options_en: ["Read every step carefully before starting.", "Read step-by-step as you go.", "Look at the pictures and guess the steps.", "Ignore instructions and wing it."], options_ar: ["أقرا كل خطوة بحرص قبل ما أبدأ.", "أقرا خطوة بخطوة وأنا شغال.", "أبص على الصور وأخمن الخطوات.", "أطنش التعليمات وأعملها بالحب."] },
+
+    { id: 18, trait: 'C', text_en: "New Year's resolutions.", text_ar: "قرارات السنة الجديدة.", options_en: ["Write a detailed list with deadlines and stick to it.", "Have a general idea of what I want to achieve.", "Make resolutions but forget them by February.", "I don't make plans; I just live day by day."], options_ar: ["أكتب قائمة مفصلة بمواعيد وألتزم بيها.", "عندي فكرة عامة عن اللي عايز أحققه.", "بعمل قرارات بس بنساها في فبراير.", "مبعملش خطط؛ أنا عايش اليوم بيومه."] },
+
+    { id: 19, trait: 'C', text_en: "How do you organize files on your computer?", text_ar: "بتنظم ملفاتك على الكمبيوتر ازاي؟", options_en: ["Labeled folders nested inside categories.", "A few general folders like 'School' and 'Personal'.", "Everything is on the Desktop.", "I use the search bar because I can't find anything."], options_ar: ["فولدرات متسمية جوه تصنيفات محددة.", "كام فولدر عام زي 'مدرسة' و 'شخصي'.", "كل حاجة مرمية على الـ Desktop.", "بستخدم البحث لأني مش لاقي حاجة."] },
+
+    { id: 20, trait: 'C', text_en: "You are faced with a very difficult physics problem.", text_ar: "واجهتك مسألة فيزياء صعبة جداً.", options_en: ["Break it down, research concepts, and keep trying until solved.", "Try for 10 minutes, then ask a friend for the answer.", "Skip it and hope it's not on the test.", "Close the book and do something else."], options_ar: ["أحللها، وأبحث عن القوانين، وأفضل أحاول لحد ما تتحل.", "أحاول ١٠ دقايق، وبعدين أطلب الحل من واحد صاحبي.", "أعديها وأتمنى متجيش في الامتحان.", "أقفل الكتاب وأعمل حاجة تانية."] },
 
     // --- OPENNESS (20 Items) ---
-    { id: 21, trait: 'O', text_en: "You see a strange modern art painting.", text_ar: "شفت لوحة فن تجريدي غريبة.", options_en: ["Analyze its meaning.", "Find it interesting.", "Confusing.", "Waste of paint."], options_ar: ["أحلل معناها.", "شكلها مثير.", "ملخبطة.", "تضييع ألوان."] },
-    { id: 22, trait: 'O', text_en: "Trying a new exotic food.", text_ar: "أكلة غريبة أول مرة تشوفها.", options_en: ["Eat it immediately.", "Ask what it is first.", "Smell it cautiously.", "Refuse to eat."], options_ar: ["آكلها فوراً.", "أسأل دي إيه الأول.", "أشمها بحذر.", "أرفض آكلها."] },
-    { id: 23, trait: 'O', text_en: "Learning a new language.", text_ar: "تتعلم لغة جديدة.", options_en: ["Excited for the challenge.", "Okay if required.", "Seems hard.", "Useless."], options_ar: ["متحمس للتحدي.", "ماشي لو مطلوب.", "شكلها صعب.", "ملهاش لازمة."] },
-    { id: 24, trait: 'O', text_en: "Teacher discusses a philosophical theory.", text_ar: "المدرس بيتكلم في فلسفة عميقة.", options_en: ["Ask questions to go deeper.", "Listen quietly.", "Zone out.", "Ask if this is in the exam."], options_ar: ["أسأل عشان أفهم أكتر.", "أسمع بس.", "أسرح.", "أسأله ده في الامتحان؟"] },
-    { id: 25, trait: 'O', text_en: "Free time activity preference.", text_ar: "نشاط في وقت الفراغ.", options_en: ["Visit a museum.", "Read a novel.", "Play video games.", "Sleep."], options_ar: ["أزور متحف.", "أقرا رواية.", "ألعب فيديو جيمز.", "أنام."] },
-    { id: 26, trait: 'O', text_en: "Hearing a song in a language you don't know.", text_ar: "أغنية بلغة مش عارفها.", options_en: ["Look up translation.", "Enjoy the melody.", "Skip it.", "Annoying."], options_ar: ["أدور على ترجمتها.", "أستمتع باللحن.", "أقلبها.", "مزعجة."] },
-    { id: 27, trait: 'O', text_en: "Travel preference.", text_ar: "تفضيلات السفر.", options_en: ["Explore unknown city.", "Guided tour.", "Beach resort.", "Stay home."], options_ar: ["أستكشف مدينة مجهولة.", "رحلة منظمة.", "منتجع عالبحر.", "أقعد في البيت."] },
-    { id: 28, trait: 'O', text_en: "Solving a riddle.", text_ar: "حل لغز.", options_en: ["Love the mental exercise.", "Try for a bit.", "Google the answer.", "Ignore it."], options_ar: ["بموت في التفكير.", "أحاول شوية.", "أجيب الحل من جوجل.", "أطنش."] },
-    { id: 29, trait: 'O', text_en: "Daydreaming.", text_ar: "أحلام اليقظة.", options_en: ["I live in my head.", "Often.", "Sometimes.", "Never."], options_ar: ["عايش جوه دماغي.", "غالباً.", "أحياناً.", "أبداً."] },
-    { id: 30, trait: 'O', text_en: "Watching a documentary.", text_ar: "فيلم وثائقي.", options_en: ["Fascinating.", "Okay.", "Boring.", "Change channel."], options_ar: ["مذهل.", "ماشي الحال.", "ممل.", "أغير القناة."] },
-    { id: 31, trait: 'O', text_en: "Changing your daily route.", text_ar: "تغيير طريقك اليومي.", options_en: ["Do it for variety.", "Only if traffic.", "Rarely.", "Never change route."], options_ar: ["أغير عشان التجديد.", "لو فيه زحمة بس.", "نادراً.", "مغيرش طريقي أبداً."] },
-    { id: 32, trait: 'O', text_en: "Reading poetry.", text_ar: "قراءة الشعر.", options_en: ["Love the metaphors.", "It's nice.", "Hard to understand.", "Boring."], options_ar: ["بعشق التشبيهات.", "حلو.", "صعب الفهم.", "ممل."] },
-    { id: 33, trait: 'O', text_en: "Meeting people with different views.", text_ar: "ناس أفكارهم عكسك.", options_en: ["Discuss to understand.", "Listen politely.", "Avoid topic.", "Argue."], options_ar: ["أناقشهم عشان أفهم.", "أسمع بأدب.", "أتجنب الموضوع.", "أتخانق."] },
-    { id: 34, trait: 'O', text_en: "Curiosity about how things work.", text_ar: "الفضول عن كيفية عمل الأشياء.", options_en: ["Take things apart.", "Watch a video.", "Don't care.", "Just use it."], options_ar: ["أفكك الحاجة.", "أتفرج على فيديو.", "مش مهتم.", "أستخدمها وخلاص."] },
-    { id: 35, trait: 'O', text_en: "Abstract concepts.", text_ar: "الأفكار المجردة.", options_en: ["Love theoretical talk.", "Prefer real examples.", "Too confusing.", "Waste of time."], options_ar: ["بحب الكلام النظري.", "فضل الأمثلة الواقعية.", "ملخبطة جداً.", "تضييع وقت."] },
-    { id: 36, trait: 'O', text_en: "Trying a new hobby.", text_ar: "تجربة هواية جديدة.", options_en: ["Try frequently.", "Try if invited.", "Stick to old hobbies.", "No hobbies."], options_ar: ["بجرب كتير.", "أجرب لو حد عزم.", "أخليك في القديم.", "معنديش هوايات."] },
-    { id: 37, trait: 'O', text_en: "Beauty in nature.", text_ar: "الجمال في الطبيعة.", options_en: ["Stop to admire.", "Notice it.", "Walk past.", "Don't notice."], options_ar: ["أقف أتأمل.", "آخد بالي.", "أمشي عادي.", "مش باخد بالي."] },
-    { id: 38, trait: 'O', text_en: "Variety in life.", text_ar: "التنوع في الحياة.", options_en: ["Need it to survive.", "Like it.", "Prefer routine.", "Hate change."], options_ar: ["محتاجه عشان أعيش.", "بحبه.", "بفضل الروتين.", "بكره التغيير."] },
-    { id: 39, trait: 'O', text_en: "Emotional depth in movies.", text_ar: "العمق العاطفي في الأفلام.", options_en: ["Cry and analyze.", "Feel touched.", "Just entertainment.", "Prefer action."], options_ar: ["أعيط وأحلل.", "أتأثر.", "مجرد تسلية.", "بفضل الأكشن."] },
-    { id: 40, trait: 'O', text_en: "Complexity.", text_ar: "التعقيد.", options_en: ["Seek it out.", "Handle it.", "Simplify it.", "Avoid it."], options_ar: ["أدور عليه.", "أتعامل معاه.", "أبسطه.", "أتجنبه."] }
+    { id: 21, trait: 'O', text_en: "You are walking down the street and see a gallery displaying strange, abstract modern art.", text_ar: "وأنت ماشي في الشارع لقيت معرض عارض فن حديث تجريدي غريب.", options_en: ["Enter immediately, eager to analyze the meanings.", "Go in just to see what it looks like.", " glance through the window but keep walking.", "Think it looks like nonsense and ignore it."], options_ar: ["أدخل فوراً، عندي فضول أحلل المعاني.", "أدخل بس عشان أتفرج على الشكل.", "أبص من الشباك وأكمل مشي.", "شايفه شكله عك وأطنش."] },
+
+    { id: 22, trait: 'O', text_en: "You are at a restaurant, and there is a dish on the menu with ingredients you have never heard of.", text_ar: "قاعد في مطعم، وفيه طبق في المنيو مكوناته عمرك ما سمعت عنها.", options_en: ["Order it immediately specifically because it's new.", "Ask the waiter for details, then maybe try it.", "Stick to a dish you know you like.", "Refuse to eat anything weird."], options_ar: ["أطلبه فوراً مخصوص عشان هو جديد.", "أسأل الجرسون عن تفاصيله، وممكن أجربه.", "أخليك في الطبق اللي عارف إني بحبه.", "أرفض آكل أي حاجة غريبة."] },
+
+    { id: 23, trait: 'O', text_en: "Your school offers an optional course on 'The Philosophy of Ancient Civilizations'.", text_ar: "المدرسة بتقدم مادة اختيارية عن 'فلسفة الحضارات القديمة'.", options_en: ["Sign up immediately; I love exploring ideas.", "Sign up only if my friends do.", "Don't sign up; it sounds hard.", "Think it sounds useless and boring."], options_ar: ["أسجل فوراً؛ بحب استكشاف الأفكار دي.", "أسجل بس لو صحابي سجلوا.", "مسجلش؛ شكلها صعبة.", "شايفها ملهاش لازمة ومملة."] },
+
+    { id: 24, trait: 'O', text_en: "During a discussion, a teacher presents a theory that completely contradicts your beliefs.", text_ar: "في مناقشة، المدرس طرح نظرية بتناقض معتقداتك تماماً.", options_en: ["Listen intently and ask questions to understand this new perspective.", "Listen politely but disagree silently.", "Zone out until they finish.", "Interrupt to argue that they are wrong."], options_ar: ["أسمع بتركيز وأسأل عشان أفهم وجهة النظر الجديدة دي.", "أسمع بأدب بس مش مقتنع من جوايا.", "أفصل لحد ما يخلص.", "أقاطعه عشان أجادل إنه غلط."] },
+
+    { id: 25, trait: 'O', text_en: "You have a completely free Saturday afternoon. What do you prefer to do?", text_ar: "عندك يوم سبت فاضي تماماً بعد الظهر. تفضل تعمل إيه؟", options_en: ["Go to a museum or read a complex novel.", "Watch a popular movie.", "Play the same video game I always play.", "Sleep or do nothing."], options_ar: ["أروح متحف أو أقرا رواية معقدة.", "أتفرج على فيلم مشهور.", "ألعب نفس الفيديو جيم اللي بلعبها دايماً.", "أنام أو معملش حاجة."] },
+
+    { id: 26, trait: 'O', text_en: "A song comes on the radio in a language you don't understand, with a very unusual melody.", text_ar: "اشتغلت أغنية في الراديو بلغة مش فاهمها، ولحنها غريب جداً.", options_en: ["Listen carefully and search for the lyrics/translation later.", "Enjoy the beat but don't think about it.", "Change the station to pop music.", "Turn it off; it sounds like noise."], options_ar: ["أسمع بتركيز وأبحث عن الكلمات والترجمة بعدين.", "أستمتع بالإيقاع بس مفكرش فيها.", "أغير المحطة لأغاني بوب معروفة.", "أقفلها؛ دي دوشة."] },
+
+    { id: 27, trait: 'O', text_en: "You win a free trip. You have to choose the destination.", text_ar: "كسبت رحلة مجانية. لازم تختار المكان.", options_en: ["A remote village in the mountains of Peru to explore.", "A guided tour of famous European cities.", "A luxury beach resort to relax.", "I'd rather sell the ticket and stay home."], options_ar: ["قرية معزولة في جبال بيرو عشان أستكشف.", "رحلة سياحية لمدن أوروبية مشهورة.", "منتجع سياحي فخم للاسترخاء.", "أبيع التذكرة وأقعد في البيت أحسن."] },
+
+    { id: 28, trait: 'O', text_en: "You encounter a difficult riddle that requires thinking outside the box.", text_ar: "قابلت لغز صعب محتاج تفكير بره الصندوق.", options_en: ["Spend hours enjoying the mental challenge.", "Try for a few minutes then give up.", "Google the answer immediately.", "Ignore it; I hate riddles."], options_ar: ["أقضي ساعات مستمتع بالتحدي الذهني ده.", "أحاول كام دقيقة وأيأس.", "أجيب الحل من جوجل فوراً.", "أطنش؛ بكره الألغاز."] },
+
+    { id: 29, trait: 'O', text_en: "How often do you find yourself daydreaming about impossible or fantasy worlds?", text_ar: "بتسرح بخيالك في عوالم خيالية أو مستحيلة قد إيه؟", options_en: ["Constantly; I live in my head.", "Often, when I am bored.", "Rarely; I focus on reality.", "Never; it's a waste of time."], options_ar: ["باستمرار؛ أنا عايش جوه دماغي.", "غالباً، لما بكون زهقان.", "نادراً؛ بركز في الواقع.", "أبداً؛ ده تضييع وقت."] },
+
+    { id: 30, trait: 'O', text_en: "Your friend suggests changing your usual route walking home to explore a new street.", text_ar: "صاحبك اقترح تغيروا الطريق المعتاد وأنتوا مروحين عشان تشوفوا شارع جديد.", options_en: ["Yes! I love seeing new things.", "Sure, if it's not too long.", "No, let's stick to the usual way.", "No, I hate changing my routine."], options_ar: ["يلا! بحب أشوف حاجات جديدة.", "ماشي، لو مش طويل أوي.", "لأ، خلينا في الطريق المعتاد.", "لأ، بكره أغير روتيني."] },
+
+    { id: 31, trait: 'O', text_en: "You are reading a book. Do you prefer:", text_ar: "بتقرأ كتاب. تفضل إيه؟", options_en: ["Science fiction or deep philosophy.", "Biographies of famous people.", "Action/Adventure.", "I don't like reading."], options_ar: ["خيال علمي أو فلسفة عميقة.", "سير ذاتية لمشاهير.", "أكشن ومغامرة.", "مبحبش القراءة."] },
+
+    { id: 32, trait: 'O', text_en: "Someone suggests watching a documentary about the origin of the universe.", text_ar: "حد اقترح تتفرجوا على وثائقي عن نشأة الكون.", options_en: ["Sounds fascinating, let's watch.", "Okay, I'll watch it.", "Sounds boring.", "I'd rather watch a comedy."], options_ar: ["شكلها مذهلة، يلا نتفرج.", "ماشي، هتفرج.", "شكلها مملة.", "أفضل أتفرج على كوميدي."] },
+
+    { id: 33, trait: 'O', text_en: "You have to write an essay. The teacher gives you a choice of topics.", text_ar: "لازم تكتب مقال. المدرس خيرك بين موضوعين.", options_en: ["'What if humans could fly?' (Creative)", "'My Summer Vacation' (Factual)", "Ask the teacher for an easier topic.", "Copy something from the internet."], options_ar: ["'ماذا لو البشر بيطيروا؟' (إبداعي)", "'أجازتي الصيفية' (واقعي)", "أطلب موضوع أسهل.", "أنقل حاجة من النت."] },
+
+    { id: 34, trait: 'O', text_en: "You see a device you've never seen before.", text_ar: "شفت جهاز عمرك ما شفته قبل كده.", options_en: ["Try to figure out how it works and take it apart if possible.", "Read the manual.", "Ask someone what it does.", "Ignore it."], options_ar: ["أحاول أفهم بيشتغل ازاي وأفكه لو ينفع.", "أقرا الكتالوج.", "أسأل حد ده بيعمل إيه.", "أطنشه."] },
+
+    { id: 35, trait: 'O', text_en: "Do you enjoy discussions about theoretical problems that have no correct answer?", text_ar: "بتستمتع بالمناقشات عن مشاكل نظرية ملهاش حل صح؟", options_en: ["Love them; they stimulate my mind.", "They are okay sometimes.", "No, I prefer practical problems.", "Hate them; they are pointless."], options_ar: ["بحبها جداً؛ بتشغل مخي.", "ماشي حالها ساعات.", "لأ، بفضل المشاكل العملية.", "بكرهها؛ ملهاش فايدة."] },
+
+    { id: 36, trait: 'O', text_en: "A friend invites you to a poetry slam (people reading poems).", text_ar: "صاحبك عزمك على أمسية شعرية.", options_en: ["Go enthusiastically to hear the metaphors.", "Go just to hang out with the friend.", "Politely decline.", "Laugh at the idea."], options_ar: ["أروح بحماس عشان أسمع التشبيهات.", "أروح بس عشان أخرج مع صاحبي.", "أرفض بذوق.", "أضحك على الفكرة."] },
+
+    { id: 37, trait: 'O', text_en: "When you are in nature, do you stop to look at details like shapes of leaves?", text_ar: "لما بتكون في الطبيعة، بتقف تتأمل تفاصيل زي شكل ورق الشجر؟", options_en: ["Yes, I often find beauty in small details.", "Sometimes.", "Rarely, I just walk.", "Never."], options_ar: ["آه، غالباً بلاقي جمال في التفاصيل الصغيرة.", "أحياناً.", "نادراً، بمشي وخلاص.", "أبداً."] },
+
+    { id: 38, trait: 'O', text_en: "Your favorite type of movie ending is:", text_ar: "نوع نهاية الفيلم المفضل ليك:", options_en: ["Ambiguous and open to interpretation.", "Happy ending.", "Clear conclusion.", "Action-packed."], options_ar: ["غامضة ومفتوحة للتفسير.", "نهاية سعيدة.", "نهاية واضحة ومقفولة.", "مليانة أكشن."] },
+
+    { id: 39, trait: 'O', text_en: "Would you ever dye your hair a crazy color (green, blue, pink)?", text_ar: "ممكن تصبغ شعرك لون مجنون (أخضر، أزرق، بينك)؟", options_en: ["Yes, I love expressing myself.", "Maybe for a costume party.", "No, that's too weird.", "Never."], options_ar: ["آه، بحب أعبر عن نفسي.", "ممكن في حفلة تنكرية.", "لأ، ده غريب جداً.", "أبداً."] },
+
+    { id: 40, trait: 'O', text_en: "You are asked to solve a math problem using a method you haven't learned yet.", text_ar: "مطلوب منك تحل مسألة رياضة بطريقة لسه متعلمتهاش.", options_en: ["Try to invent my own method to solve it.", "Wait for the teacher to explain.", "Ask a smart student.", "Give up."], options_ar: ["أحاول أخترع طريقتي الخاصة للحل.", "أستنى المدرس يشرح.", "أسأل طالب شاطر.", "أيأس."] }
 ];
 
 // --- MAIN COMPONENT ---
@@ -903,6 +943,3 @@ const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
     </div>
   );
 }
-
-
-
