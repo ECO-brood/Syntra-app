@@ -5,7 +5,8 @@ import {
   ArrowRight, Sparkles, Send, Plus, Trash2, Smile, 
   Activity, Lightbulb, LogOut, Lock, Mail, UserCircle,
   PenTool, ShieldCheck, Cloud, RefreshCw, MailCheck, Bell,
-  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff, Key, Zap
+  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff, Key, Zap,
+  Server, Network
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -51,6 +52,10 @@ const getEnvApiKey = () => {
   return "";
 };
 
+const getProvider = () => {
+    return localStorage.getItem('syntra_ai_provider') || 'gemini'; // 'gemini' or 'openrouter'
+};
+
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = {
   apiKey: "AIzaSyAu3Mwy1E82hS_8n9nfmaxl_ji7XWb5KoM",
@@ -89,55 +94,54 @@ const getHybridUserId = (email) => {
   return email.toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
 };
 
-// --- SIMULATION ENGINE (FALLBACK) ---
-// This ensures the app functions even if the API is totally dead
-const simulateResponse = (prompt, systemInstruction = "") => {
-  const p = prompt.toLowerCase();
-  const sys = systemInstruction.toLowerCase();
+// --- AI ENGINE ---
 
-  console.warn("Generating SIMULATED response for:", prompt);
+// A. OpenRouter Implementation (The Gateway Solution)
+const callOpenRouter = async (prompt, systemInstruction, apiKey) => {
+    // List of free/reliable models to try in order
+    const models = [
+        "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "mistralai/mistral-7b-instruct:free",
+        "meta-llama/llama-3-8b-instruct:free",
+        "google/gemini-pro"
+    ];
 
-  // 1. Planner Magic Breakdown
-  if (p.includes("break down goal") || p.includes("steps")) {
-    return "Research the core requirements ||| Create a draft outline ||| Review and finalize the details";
-  }
+    for (const model of models) {
+        try {
+            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${apiKey}`,
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": window.location.href, // Required by OpenRouter
+                    "X-Title": "Syntra App"
+                },
+                body: JSON.stringify({
+                    "model": model,
+                    "messages": [
+                        { "role": "system", "content": systemInstruction },
+                        { "role": "user", "content": prompt }
+                    ]
+                })
+            });
 
-  // 2. Journal Analysis
-  if (p.includes("analyze journal")) {
-    return "This reflects a strong mindset. Try to focus on the small wins tomorrow. (Simulated Advice)";
-  }
-
-  // 3. Welcome Email
-  if (p.includes("welcome email")) {
-    return "Subject: Welcome to Syntra!\n\nWe are excited to have you join us. Your profile suggests you are ready for great things.\n\nBest,\nSyntra Team";
-  }
-
-  // 4. Chat: Task Addition
-  // If user says "add homework", we simulate the [ADD:...] protocol
-  if (p.includes("add") || p.includes("remind") || p.includes("task")) {
-    // Extract potential task name or default
-    const cleanTask = prompt.replace("add", "").replace("remind me to", "").trim() || "New Task";
-    return `[ADD: ${cleanTask}] I've added that to your planner. (Offline Mode)`;
-  }
-
-  // 5. Chat: General
-  if (sys.includes("egyptian arabic")) {
-     return "يا صديقي، أنا شغال دلوقتي في وضع المحاكاة (Offline Mode) عشان النت عندك فيه مشكلة. بس أنا سامعك!";
-  }
-
-  return "I am currently in Offline Simulation Mode. I received your message: " + prompt;
+            if (response.ok) {
+                const data = await response.json();
+                const text = data.choices?.[0]?.message?.content;
+                if (text) return text;
+            } else {
+                const err = await response.json();
+                console.warn(`OpenRouter model ${model} failed:`, err);
+            }
+        } catch (e) {
+            console.error(`Network error on OpenRouter ${model}`, e);
+        }
+    }
+    return "AI Error: OpenRouter failed to respond. Please check your key quota.";
 };
 
-
-// --- GEMINI API HELPER (ROBUST + SIMULATION) ---
-const callGemini = async (prompt, systemInstruction = "") => {
-  const apiKey = getEnvApiKey();
-
-  // If no key, go straight to simulation
-  if (!apiKey || apiKey.length < 10) {
-      return simulateResponse(prompt, systemInstruction);
-  }
-
+// B. Direct Google Implementation (Legacy)
+const callGoogleDirect = async (prompt, systemInstruction, apiKey) => {
   const attempts = [
     { model: "gemini-1.5-flash", version: "v1beta" },
     { model: "gemini-1.5-pro", version: "v1beta" },
@@ -162,19 +166,35 @@ const callGemini = async (prompt, systemInstruction = "") => {
       
       if (response.ok) {
         const data = await response.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || simulateResponse(prompt, systemInstruction);
+        return data.candidates?.[0]?.content?.parts?.[0]?.text;
       }
-      
-      // If 404 or other errors, strictly continue loop
-      if (response.status === 404 || response.status === 403 || response.status === 400) continue; 
-
     } catch (error) {
-      console.error("Network fail on model:", model);
+      console.error("Direct Google fail:", model);
     }
   }
-  
-  // FINAL FALLBACK: If everything failed, simulate.
-  return simulateResponse(prompt, systemInstruction);
+  return null; // Signal failure
+};
+
+// C. Main AI Handler
+const callAI = async (prompt, systemInstruction = "") => {
+  const apiKey = getEnvApiKey();
+  const provider = getProvider();
+
+  if (!apiKey || apiKey.length < 5) {
+      return "KEY_MISSING";
+  }
+
+  // 1. Try OpenRouter if selected
+  if (provider === 'openrouter') {
+      return await callOpenRouter(prompt, systemInstruction, apiKey);
+  }
+
+  // 2. Try Google Direct
+  const googleRes = await callGoogleDirect(prompt, systemInstruction, apiKey);
+  if (googleRes) return googleRes;
+
+  // 3. Fallback Message (No simulation, just honest error)
+  return `AI Connection Failed. \n\nTip: Go to Settings and try switching the Provider to "OpenRouter". It is more reliable for web apps.`;
 };
 
 // --- LOCALIZATION ---
@@ -224,9 +244,13 @@ const LANGUAGES = {
     reconnect: "Retry",
     connect_error: "Connection Issue",
     settings: "Settings",
-    api_key_label: "Gemini API Key (Optional Override)",
-    api_key_placeholder: "Paste AIza... here",
-    save: "Save"
+    api_key_label: "API Key",
+    api_key_placeholder: "Paste Key here...",
+    save: "Save",
+    provider_label: "AI Provider",
+    provider_google: "Google Gemini (Direct)",
+    provider_openrouter: "OpenRouter (Recommended)",
+    openrouter_note: "Fixes connection issues. Get free key at openrouter.ai"
   },
   ar: {
     welcome: "مرحباً بك في سينترا",
@@ -273,9 +297,13 @@ const LANGUAGES = {
     reconnect: "إعادة المحاولة",
     connect_error: "مشكلة في الاتصال",
     settings: "الإعدادات",
-    api_key_label: "مفتاح API (اختياري)",
+    api_key_label: "مفتاح API",
     api_key_placeholder: "ضع المفتاح هنا...",
-    save: "حفظ"
+    save: "حفظ",
+    provider_label: "مزود الخدمة",
+    provider_google: "جوجل (مباشر)",
+    provider_openrouter: "OpenRouter (ينصح به)",
+    openrouter_note: "يحل مشاكل الاتصال. احصل على مفتاح مجاني من openrouter.ai"
   }
 };
 
@@ -384,13 +412,12 @@ export default function SyntraApp() {
         });
         
         // Generate Welcome Email
-        const emailBody = await callGemini(
+        const emailBody = await callAI(
           `Write a short, professional welcome email for student ${profileData.name}. 
            Mention their traits (C:${profileData.c_score}, O:${profileData.o_score}). Language: ${lang}.`
         );
         
-        // Don't save empty/error emails, but DO save valid simulated ones
-        if (emailBody && !emailBody.includes("KEY_MISSING")) {
+        if (emailBody && !emailBody.includes("KEY_MISSING") && !emailBody.startsWith("AI Connection Failed")) {
            await addDoc(collection(db, 'artifacts', appId, 'users', activeUserId, 'inbox'), {
              subject: t.welcome_subject,
              body: emailBody,
@@ -467,23 +494,24 @@ export default function SyntraApp() {
 // --- SETTINGS MODAL ---
 const SettingsModal = ({ t, onClose }) => {
   const [key, setKey] = useState('');
-  const [testStatus, setTestStatus] = useState(null); // null, 'loading', 'success', 'error'
+  const [provider, setProvider] = useState('gemini');
+  const [testStatus, setTestStatus] = useState(null); 
   const [testMsg, setTestMsg] = useState('');
 
   useEffect(() => {
     setKey(localStorage.getItem('syntra_api_key') || '');
+    setProvider(localStorage.getItem('syntra_ai_provider') || 'gemini');
   }, []);
 
-  const saveKey = () => {
+  const saveSettings = () => {
     if (key.trim()) {
       localStorage.setItem('syntra_api_key', key.trim());
-      alert("API Key Saved! The app will now use this key.");
-      window.location.reload();
     } else {
       localStorage.removeItem('syntra_api_key');
-      alert("API Key Removed. App will try to use Environment Variables.");
-      window.location.reload();
     }
+    localStorage.setItem('syntra_ai_provider', provider);
+    alert(t.save + " " + (testStatus === 'success' ? "OK" : "Done"));
+    window.location.reload();
   };
 
   const testConnection = async () => {
@@ -491,23 +519,23 @@ const SettingsModal = ({ t, onClose }) => {
      setTestStatus('loading');
      setTestMsg("Testing...");
      
-     // Temporary save for the test call
-     const originalKey = localStorage.getItem('syntra_api_key');
+     // Temp Save
      localStorage.setItem('syntra_api_key', key.trim());
+     localStorage.setItem('syntra_ai_provider', provider);
      
-     const result = await callGemini("Say 'OK'", "Test");
+     const result = await callAI("Say OK");
      
-     // Restore original key if user hasn't saved yet
-     if (!originalKey) localStorage.removeItem('syntra_api_key');
-     else localStorage.setItem('syntra_api_key', originalKey);
-
-     // Check if we got a real response OR a valid simulation response
-     if (result.includes("OK") || result.includes("Simulation")) {
-         setTestStatus('success');
-         setTestMsg("App is Functional! (Mode: " + (result.includes("Simulation") ? "Simulation" : "Online") + ")");
+     if (result.includes("OK") || result.includes("ok") || result.length > 0) {
+         if (result.startsWith("AI Connection Failed")) {
+             setTestStatus('error');
+             setTestMsg("Failed. Try OpenRouter?");
+         } else {
+            setTestStatus('success');
+            setTestMsg("Connected!");
+         }
      } else {
          setTestStatus('error');
-         setTestMsg("Test Failed.");
+         setTestMsg("Failed.");
      }
   };
 
@@ -518,14 +546,30 @@ const SettingsModal = ({ t, onClose }) => {
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Settings size={20}/> {t.settings}</h2>
           <button onClick={onClose}><X className="text-slate-400 hover:text-slate-800"/></button>
         </div>
-        <div className="space-y-4">
+        <div className="space-y-6">
+          
+          {/* PROVIDER SELECTOR */}
+          <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">{t.provider_label}</label>
+              <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => setProvider('gemini')} className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${provider === 'gemini' ? 'bg-teal-50 border-teal-500 text-teal-800' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                      <Cloud size={20}/>
+                      <span className="text-xs font-bold">{t.provider_google}</span>
+                  </button>
+                  <button onClick={() => setProvider('openrouter')} className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${provider === 'openrouter' ? 'bg-teal-50 border-teal-500 text-teal-800' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                      <Network size={20}/>
+                      <span className="text-xs font-bold">{t.provider_openrouter}</span>
+                  </button>
+              </div>
+              {provider === 'openrouter' && <p className="text-[10px] text-teal-600 mt-2 font-medium">{t.openrouter_note}</p>}
+          </div>
+
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2">{t.api_key_label}</label>
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3 focus-within:border-teal-500 transition-all">
               <Key size={18} className="text-slate-400"/>
               <input type="text" value={key} onChange={e => setKey(e.target.value)} placeholder={t.api_key_placeholder} className="bg-transparent outline-none flex-1 font-mono text-sm" />
             </div>
-            <p className="text-xs text-slate-400 mt-2">Required if Environment Variables are not set. Saved locally in your browser.</p>
           </div>
           
           {testMsg && (
@@ -538,7 +582,7 @@ const SettingsModal = ({ t, onClose }) => {
              <button onClick={testConnection} disabled={testStatus === 'loading'} className="flex-1 bg-teal-50 text-teal-700 py-3 rounded-xl font-bold hover:bg-teal-100 transition-all flex items-center justify-center gap-2">
                  {testStatus === 'loading' ? <RefreshCw className="animate-spin" size={16}/> : <Zap size={16}/>} Test
              </button>
-             <button onClick={saveKey} className="flex-1 bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-all">{t.save}</button>
+             <button onClick={saveSettings} className="flex-1 bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-all">{t.save}</button>
           </div>
         </div>
       </div>
@@ -848,7 +892,21 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSettings
              - If existing task matches, DO NOT add duplicate.
         `;
 
-        const aiRaw = await callGemini(text, systemPrompt);
+        const aiRaw = await callAI(text, systemPrompt);
+        
+        if (aiRaw === "KEY_MISSING") {
+           onOpenSettings();
+           setMsgs(prev => [...prev, {id: Date.now()+1, role: 'ai', text: "Please set your API Key in Settings to chat."}]);
+           setLoading(false);
+           return;
+        }
+
+        if (aiRaw.startsWith("AI Connection Failed") || aiRaw.startsWith("AI Error")) {
+           setMsgs(prev => [...prev, {id: Date.now()+1, role: 'ai', text: aiRaw}]);
+           setLoading(false);
+           return;
+        }
+
         let aiText = aiRaw;
         
         const modMatch = aiRaw.match(/\[MOD:\s*(.*?)\s*->\s*(.*?)\]/);
@@ -957,9 +1015,14 @@ const PlannerModule = ({ t, userId, lang, profile, appId, isOffline, onOpenSetti
   const magicBreakdown = async () => {
     if (!newTask.trim()) return;
     setIsMagicLoading(true);
-    const result = await callGemini(`Break down goal "${newTask}" into 3 steps. Language: ${lang}. Return steps joined by |||`);
+    const result = await callAI(`Break down goal "${newTask}" into 3 steps. Language: ${lang}. Return steps joined by |||`);
     
-    // Safety check - if simulated response is just a string, it will parse fine
+    if (result === "KEY_MISSING" || result.startsWith("AI Connection Failed")) {
+        onOpenSettings();
+        setIsMagicLoading(false);
+        return;
+    }
+
     const subtasks = result.split('|||').map(s => s.trim()).filter(s => s);
     for (const st of subtasks) await addTask(st, 'ai-magic');
     setNewTask('');
@@ -999,7 +1062,13 @@ const JournalModule = ({ t, userId, lang, appId, isOffline, onOpenSettings }) =>
   const [insight, setInsight] = useState('');
   const analyze = async () => {
     if(entry.length < 10) return;
-    const res = await callGemini(`Analyze journal: "${entry}". Give 1 sentence advice in ${lang}.`);
+    const res = await callAI(`Analyze journal: "${entry}". Give 1 sentence advice in ${lang}.`);
+    
+    if (res === "KEY_MISSING" || res.startsWith("AI Connection Failed")) {
+        onOpenSettings();
+        setInsight("Please check Settings to add API Key.");
+        return;
+    }
     setInsight(res);
   }
   return (
