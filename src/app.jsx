@@ -38,8 +38,8 @@ import {
 // --- CONFIGURATION ---
 
 // 1. GEMINI API KEY
-// For Vercel: const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
-const apiKey = "AIzaSyAnLsbC_xqGAh-XnRcHw8kyTD8B_GX0_Vw"; 
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
+// const apiKey = "AIzaSyAnLsbC_xqGAh-XnRcHw8kyTD8B_GX0_Vw"; 
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = {
@@ -943,3 +943,4 @@ const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
     </div>
   );
 }
+
