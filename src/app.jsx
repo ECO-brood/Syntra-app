@@ -21,8 +21,8 @@ import {
 // --- CONFIGURATION ---
 
 // 1. GEMINI API KEY
-// NOTE: For local development, replace "" with your actual key like "AIzaSy..."
-const apiKey = "AIzaSyCpJ2DVSaQaT84_cQlGIOev7tCSiqkNR1U"; 
+// We use the environment key if available, otherwise fallback to the user's provided key for local dev.
+const apiKey = typeof __firebase_config !== 'undefined' ? "" : "AIzaSyCpJ2DVSaQaT84_cQlGIOev7tCSiqkNR1U"; 
 
 // 2. FIREBASE CONFIGURATION
 // We use the environment config for the preview to work. 
@@ -64,19 +64,19 @@ const getHybridUserId = (email) => {
 
 // --- GEMINI API HELPER (ROBUST & FAST) ---
 const callGemini = async (prompt, systemInstruction = "") => {
-  if (!apiKey && typeof __firebase_config === 'undefined') {
-    // In local dev without env vars
-    console.warn("API Key might be missing.");
-  }
+  // Use apiKey variable. If empty (in Canvas), the environment injects it. 
+  // If local, it uses the hardcoded fallback above.
+  const effectiveKey = apiKey; 
 
-  // Exponential backoff logic
-  const delays = [1000, 2000, 4000];
-  const model = "gemini-2.5-flash-preview-09-2025"; 
+  // Models to try in order. 
+  // 1. Preview model (Fastest/Smartest for this env)
+  // 2. Flash 1.5 (Standard fallback for local dev if preview unavailable)
+  const models = ["gemini-2.5-flash-preview-09-2025", "gemini-1.5-flash"];
 
-  for (let i = 0; i <= delays.length; i++) {
+  for (const model of models) {
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${effectiveKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -93,20 +93,21 @@ const callGemini = async (prompt, systemInstruction = "") => {
       );
 
       if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
+        // If 404 (model not found) or 400, try next model
+        const errText = await response.text();
+        console.warn(`Model ${model} failed:`, errText);
+        continue; 
       }
 
       const data = await response.json();
       return data.candidates?.[0]?.content?.parts?.[0]?.text || "Thinking...";
     } catch (e) {
-      if (i < delays.length) {
-        await new Promise(r => setTimeout(r, delays[i]));
-      } else {
-        console.error("Gemini Failure:", e);
-        return "System: Connection unstable. Please try again.";
-      }
+      console.warn(`Connection error on ${model}:`, e);
+      // Continue to next model on network error
     }
   }
+  
+  throw new Error("All AI models failed to respond. Check API Key or Internet.");
 };
 
 // --- LOCALIZATION ---
@@ -722,8 +723,8 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
 
     } catch (e) {
         console.error(e);
-        const errMsg = lang === 'ar' ? "معلش في مشكلة في الاتصال، حاول تاني." : "Connection failed. Please check internet.";
-        setMsgs(prev => [...prev, {id: Date.now()+2, role: 'ai', text: errMsg}]);
+        const errMsg = e.message || (lang === 'ar' ? "معلش في مشكلة في الاتصال، حاول تاني." : "Connection failed. Please check internet.");
+        setMsgs(prev => [...prev, {id: Date.now()+2, role: 'ai', text: `Error: ${errMsg}`}]);
     }
     
     setLoading(false);
