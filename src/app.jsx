@@ -39,8 +39,7 @@ import {
 // 1. GEMINI API KEY
 // NOTE: import.meta.env causes errors in this preview. 
 // For Vercel, uncomment the line below:
-// const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-const apiKey = "AIzaSyCpJ2DVSaQaT84_cQlGIOev7tCSiqkNR1U"; 
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = {
@@ -579,3 +578,4 @@ const Journal = ({ lang }) => (
     <textarea className="flex-1 bg-yellow-50/50 border-2 border-yellow-100 rounded-3xl p-8 text-start text-xl leading-loose resize-none outline-none focus:border-yellow-300 transition-all placeholder-yellow-800/30" placeholder="..." />
   </div>
 );
+
