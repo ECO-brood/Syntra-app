@@ -4,7 +4,8 @@ import {
   Calendar, Settings, User, Globe, ArrowRight, Sparkles, Send, 
   Plus, Trash2, Smile, Activity, Lightbulb, LogOut, Lock, Mail, 
   UserCircle, PenTool, ShieldCheck, Cloud, RefreshCw, Bell, 
-  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff
+  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff, Map, Flag, Target,
+  CheckSquare, ArrowDown
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -15,16 +16,14 @@ import {
 import { 
   getFirestore, collection, addDoc, query, onSnapshot, 
   serverTimestamp, doc, setDoc, getDoc, deleteDoc, updateDoc, 
-  initializeFirestore, persistentLocalCache, persistentMultipleTabManager
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  orderBy, limit
 } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
 
-// 1. GEMINI API KEY
-// Explicitly using your provided key to ensure connection works
 const apiKey = "AIzaSyCpJ2DVSaQaT84_cQlGIOev7tCSiqkNR1U"; 
 
-// 2. FIREBASE CONFIGURATION
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : {
@@ -47,7 +46,6 @@ const db = initializeFirestore(app, {
   })
 });
 
-// 3. STATIC APP ID
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'syntra-web-v2';
 
 // --- FALLBACK DATA ---
@@ -61,10 +59,7 @@ const getHybridUserId = (email) => {
 
 // --- GEMINI API HELPER ---
 const callGemini = async (prompt, systemInstruction = "") => {
-  // Using the hardcoded key to guarantee connection
   const effectiveKey = apiKey; 
-  
-  // Models to try - added gemini-1.5-pro as a robust fallback
   const models = ["gemini-1.5-flash", "gemini-2.5-flash-preview-09-2025", "gemini-pro"];
 
   for (const model of models) {
@@ -87,7 +82,6 @@ const callGemini = async (prompt, systemInstruction = "") => {
       );
 
       if (!response.ok) {
-        // Log detailed error for debugging
         const errText = await response.text();
         console.warn(`Model ${model} failed (${response.status}):`, errText);
         continue; 
@@ -123,6 +117,7 @@ const LANGUAGES = {
     dashboard: "Dashboard",
     chat: "Aura Guide",
     plan: "Smart Planner",
+    roadmap: "Life Roadmap",
     journal: "Neuro Journal",
     task_add: "Add Task",
     task_magic: "Magic Breakdown",
@@ -148,7 +143,14 @@ const LANGUAGES = {
     task_auto_updated: "Task updated:",
     offline_mode: "Offline",
     reconnect: "Retry",
-    connect_error: "Connection Issue"
+    connect_error: "Connection Issue",
+    roadmap_goal_placeholder: "What is your big ambition? (e.g., Become a Cyber Security Expert)",
+    generate_roadmap: "Generate Life Map",
+    roadmap_loading: "Analyzing feasibility & constructing path...",
+    current_phase: "Current Phase",
+    mark_done: "Mark Complete",
+    roadmap_limit_error: "Goal Feasibility Warning: Based on your current profile and load, this goal might be too overwhelming.",
+    roadmap_reset: "Reset Roadmap"
   },
   ar: {
     welcome: "مرحباً بك في سينترا",
@@ -168,6 +170,7 @@ const LANGUAGES = {
     dashboard: "الرئيسية",
     chat: "المساعد (أورا)",
     plan: "المهام الذكية",
+    roadmap: "خارطة الطريق",
     journal: "المذكرات",
     task_add: "إضافة مهمة",
     task_magic: "تقسيم ذكي",
@@ -193,11 +196,18 @@ const LANGUAGES = {
     task_auto_updated: "تم تعديل:",
     offline_mode: "غير متصل",
     reconnect: "إعادة المحاولة",
-    connect_error: "مشكلة في الاتصال"
+    connect_error: "مشكلة في الاتصال",
+    roadmap_goal_placeholder: "إيه حلمك الكبير؟ (مثلاً: أبقى خبير أمن سيبراني)",
+    generate_roadmap: "بناء الخارطة",
+    roadmap_loading: "جاري دراسة الجدوى وبناء المسار...",
+    current_phase: "المرحلة الحالية",
+    mark_done: "تم الإنجاز",
+    roadmap_limit_error: "تنبيه جدوى: بناءً على ملفك الحالي، الهدف ده ممكن يكون ضغط زيادة عليك.",
+    roadmap_reset: "حذف الخارطة"
   }
 };
 
-// --- FULL 40 UNIQUE SJT QUESTIONS (Restored) ---
+// --- FULL 40 UNIQUE SJT QUESTIONS ---
 const FULL_SJT = [
     // --- CONSCIENTIOUSNESS (20 Items) ---
     { id: 1, trait: 'C', text_en: "It's Thursday evening, and you have a major biology assignment due on Monday morning. Your friends just messaged you in the group chat about a spontaneous weekend trip to the beach that starts tomorrow morning. You haven't started the assignment yet.", text_ar: "النهارده الخميس بالليل، وعندك واجب أحياء كبير لازم يتسلم الاثنين الصبح. صحابك بعتولك على الجروب إنهم طالعين رحلة للعين السخنة بكرة الصبح، وأنت لسه مابدأتش في الواجب خالص.", options_en: ["Decline the trip immediately to ensure the assignment is finished with high quality.", "Go on the trip but wake up early Sunday to rush through the work.", "Take your laptop and books with you, planning to work during the trip.", "Go on the trip and decide to copy the assignment from a friend later."], options_ar: ["أعتذر عن الرحلة فوراً عشان أضمن إني أخلص الواجب بجودة عالية.", "أطلع الرحلة بس أصحى بدري يوم الأحد أكروته.", "آخد اللابتوب والكتب معايا بنية إني أذاكر هناك.", "أطلع الرحلة وأبقى أنقل الواجب من حد صاحبي بعدين."] },
@@ -600,6 +610,7 @@ const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline })
       <div className="w-24 bg-white rounded-[2.5rem] shadow-xl border border-slate-100 flex flex-col items-center py-8 gap-6 z-10">
         <NavIcon icon={<MessageCircle />} active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} />
         <NavIcon icon={<Calendar />} active={activeTab === 'plan'} onClick={() => setActiveTab('plan')} />
+        <NavIcon icon={<Map />} active={activeTab === 'roadmap'} onClick={() => setActiveTab('roadmap')} />
         <NavIcon icon={<BookOpen />} active={activeTab === 'journal'} onClick={() => setActiveTab('journal')} />
         
         <div className="mt-auto relative">
@@ -614,6 +625,7 @@ const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline })
       <div className="flex-1 bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden relative flex flex-col">
         {activeTab === 'chat' && <ChatModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
         {activeTab === 'plan' && <PlannerModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
+        {activeTab === 'roadmap' && <RoadmapModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
         {activeTab === 'journal' && <JournalModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
       </div>
 
@@ -649,6 +661,7 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentTasks, setCurrentTasks] = useState([]);
+  const [roadmap, setRoadmap] = useState([]);
   const scrollRef = useRef(null);
 
   // Load Chat History
@@ -674,6 +687,16 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     return () => unsub();
   }, [userId, isOffline]);
 
+  // Fetch Roadmap for Context
+  useEffect(() => {
+    if(!userId || isOffline) return;
+    const q = query(collection(db, 'artifacts', appId, 'users', userId, 'roadmap'), orderBy("order"));
+    const unsub = onSnapshot(q, (snap) => {
+      setRoadmap(snap.docs.map(d => ({id: d.id, ...d.data()})));
+    }, () => {});
+    return () => unsub();
+  }, [userId, isOffline]);
+
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, loading]);
 
   const send = async () => {
@@ -695,22 +718,30 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
         // 2. Prepare Context
         const taskListString = currentTasks.map(t => `- ${t.text} (ID: ${t.id})`).join('\n');
         
-        // 3. Strict System Prompt for Egyptian Arabic
+        // Prepare Roadmap Context (Current Phase)
+        const activePhase = roadmap.find(r => r.status === 'in-progress') || roadmap.find(r => r.status === 'pending');
+        const roadmapContext = activePhase 
+           ? `CURRENT ROADMAP PHASE: ${activePhase.title} (Status: ${activePhase.status}). Description: ${activePhase.description}.`
+           : "NO ACTIVE ROADMAP.";
+
+        // 3. Strict System Prompt for Egyptian Arabic + Roadmap Integration
         const systemPrompt = `
           IDENTITY: You are "Aura", a sophisticated AI mentor using the BIG-5 personality model.
           USER PROFILE: Name: ${profile.name}, Age: ${profile.age}, C:${profile.c_score}, O:${profile.o_score}.
-          CURRENT TASKS:
+          
+          CONTEXT:
+          TASKS:
           ${taskListString}
+          
+          ${roadmapContext}
 
-          CRITICAL LANGUAGE INSTRUCTIONS:
-          - The user's interface language is: ${lang === 'ar' ? 'Arabic' : 'English'}.
-          - IF 'ar': You MUST speak in EGYPTIAN ARABIC (Masri) slang. Be friendly, helpful, and sound like a cool mentor from Cairo. Do NOT use Modern Standard Arabic (Fusha).
-          - IF 'en': Speak in clear English.
-
-          TOOLS & BEHAVIOR:
-          - If the user wants to add a task, strictly write on a new line: [ADD: task text]
-          - If the user wants to update a task, strictly write: [MOD: old_task_text -> new_task_text]
-          - Keep responses concise and encouraging.
+          CRITICAL INSTRUCTIONS:
+          - Language: ${lang === 'ar' ? 'Egyptian Arabic (Masri)' : 'English'}.
+          - ROLE: Translate the long-term roadmap into daily advice. If a roadmap phase exists, ask about their progress on it or suggest a small daily step related to it.
+          - TOOLS:
+            - Write [ADD: task text] to add a task.
+            - Write [MOD: old -> new] to update a task.
+          - Tone: Friendly, concise, motivating.
         `;
 
         // 4. Call AI
@@ -782,6 +813,206 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder={t.chat_placeholder} className="flex-1 bg-slate-100 rounded-2xl p-5 outline-none focus:ring-2 focus:ring-teal-500/20 text-lg" />
          <button onClick={send} disabled={loading} className="bg-teal-500 text-white p-5 rounded-2xl hover:bg-teal-600 disabled:opacity-50"><Send /></button>
        </div>
+    </div>
+  );
+};
+
+// --- ROADMAP MODULE (NEW) ---
+const RoadmapModule = ({ t, userId, lang, profile, appId, isOffline }) => {
+  const [goal, setGoal] = useState('');
+  const [phases, setPhases] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!userId || isOffline) return;
+    const q = query(collection(db, 'artifacts', appId, 'users', userId, 'roadmap'), orderBy("order"));
+    const unsub = onSnapshot(q, (snap) => {
+        setPhases(snap.docs.map(d => ({id: d.id, ...d.data()})));
+    }, (err) => console.log("Roadmap Offline", err));
+    return () => unsub();
+  }, [userId, isOffline]);
+
+  const generateRoadmap = async () => {
+    if (!goal.trim()) return;
+    setLoading(true);
+    setError(null);
+
+    const prompt = `
+      ACT AS: Expert Academic & Life Counselor.
+      USER: Age ${profile.age}. Interest: "${goal}".
+      PROFILE: Conscientiousness ${profile.c_score}, Openness ${profile.o_score}.
+      LANGUAGE: ${lang === 'ar' ? 'Arabic' : 'English'}.
+      
+      TASK: 
+      1. Assess FEASIBILITY. If the user is too young (e.g. < 12 wanting to be a neurosurgeon now) or the goal is impossible, return JSON with "error".
+      2. If feasible, create a Roadmap (Flowchart) with 4-6 distinct phases.
+      3. Return ONLY valid JSON array: 
+      [
+        { "title": "Phase Name", "description": "Short details", "duration": "e.g. 2 months", "type": "milestone" } 
+      ]
+      OR { "error": "Reason why this goal exceeds limitations currently." }
+    `;
+
+    try {
+      const resultRaw = await callGemini(prompt);
+      const jsonStr = resultRaw.match(/\[.*\]|\{.*\}/s)?.[0]; // Extract JSON
+      if (!jsonStr) throw new Error("Failed to parse AI plan.");
+      
+      const result = JSON.parse(jsonStr);
+
+      if (result.error) {
+        setError(result.error);
+        setLoading(false);
+        return;
+      }
+
+      // Delete existing
+      if (!isOffline) {
+        phases.forEach(async (p) => {
+           await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', p.id));
+        });
+
+        // Add new
+        if (Array.isArray(result)) {
+           result.forEach(async (phase, idx) => {
+             await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'roadmap'), {
+               ...phase,
+               order: idx,
+               status: idx === 0 ? 'in-progress' : 'pending',
+               createdAt: serverTimestamp()
+             });
+           });
+        }
+      }
+
+    } catch (e) {
+      console.error(e);
+      setError("AI Generation Failed. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const markPhaseDone = async (phase) => {
+     if (isOffline) return;
+     await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', phase.id), { status: 'done' });
+     
+     // Find next phase
+     const nextPhase = phases.find(p => p.order === phase.order + 1);
+     if (nextPhase) {
+         await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', nextPhase.id), { status: 'in-progress' });
+     }
+  };
+
+  const clearMap = async () => {
+    if (isOffline) return;
+    phases.forEach(async (p) => {
+        await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', p.id));
+     });
+    setGoal('');
+  };
+
+  return (
+    <div className="h-full flex flex-col bg-slate-50/30 overflow-hidden relative">
+      {phases.length === 0 ? (
+         // --- EMPTY STATE / INPUT ---
+         <div className="flex-1 flex flex-col items-center justify-center p-10 animate-in fade-in zoom-in duration-500">
+             <div className="w-20 h-20 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-teal-500/20">
+               <Target size={40} />
+             </div>
+             <h2 className="text-3xl font-bold text-slate-800 mb-4 text-center">{t.roadmap}</h2>
+             <p className="text-slate-500 mb-8 text-center max-w-md">{t.roadmap_goal_placeholder}</p>
+             
+             <div className="w-full max-w-lg relative">
+                <input 
+                  value={goal} 
+                  onChange={e => setGoal(e.target.value)} 
+                  placeholder={t.roadmap_goal_placeholder}
+                  className="w-full p-5 pl-6 pr-16 rounded-2xl border-2 border-slate-200 outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all text-lg shadow-sm"
+                />
+                <button 
+                  onClick={generateRoadmap}
+                  disabled={loading || !goal}
+                  className="absolute right-2 top-2 bottom-2 bg-slate-900 text-white px-6 rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 transition-all flex items-center justify-center"
+                >
+                  {loading ? <RefreshCw className="animate-spin" /> : <ArrowRight />}
+                </button>
+             </div>
+             
+             {loading && <p className="mt-4 text-teal-600 font-medium animate-pulse">{t.roadmap_loading}</p>}
+             {error && (
+               <div className="mt-6 p-4 bg-red-50 text-red-600 rounded-xl border border-red-100 flex items-center gap-3 max-w-md">
+                 <AlertTriangle className="shrink-0" />
+                 <p className="text-sm font-medium">{t.roadmap_limit_error} <br/><span className="text-xs opacity-75">Reason: {error}</span></p>
+               </div>
+             )}
+         </div>
+      ) : (
+        // --- VISUALIZATION ---
+        <div className="flex-1 flex flex-col relative h-full">
+           <div className="p-6 border-b border-slate-100 bg-white/50 backdrop-blur-sm flex justify-between items-center z-10">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">{goal || "My Journey"}</h3>
+                <p className="text-sm text-slate-400">{phases.filter(p => p.status === 'done').length} / {phases.length} Phases Complete</p>
+              </div>
+              <button onClick={clearMap} className="text-xs text-red-400 hover:text-red-600 font-bold border border-red-100 px-3 py-1 rounded-lg hover:bg-red-50">{t.roadmap_reset}</button>
+           </div>
+           
+           <div className="flex-1 overflow-y-auto p-10 relative">
+              {/* Central Line */}
+              <div className="absolute left-[50%] top-10 bottom-10 w-1 bg-slate-200 -ml-0.5 rounded-full hidden md:block"></div>
+              
+              <div className="max-w-3xl mx-auto space-y-0 relative">
+                 {phases.map((phase, idx) => (
+                   <div key={phase.id} className={`relative flex items-center mb-12 group ${idx % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'} flex-col`}>
+                      
+                      {/* Node Circle */}
+                      <div className={`absolute left-1/2 -translate-x-1/2 w-8 h-8 rounded-full border-4 z-10 hidden md:flex items-center justify-center bg-white transition-all duration-500
+                         ${phase.status === 'done' ? 'border-teal-500' : phase.status === 'in-progress' ? 'border-amber-400 scale-125' : 'border-slate-200'}`}>
+                         {phase.status === 'done' && <div className="w-2 h-2 bg-teal-500 rounded-full"></div>}
+                      </div>
+
+                      {/* Content Card */}
+                      <div className={`w-full md:w-[45%] p-6 rounded-3xl border transition-all duration-300 relative overflow-hidden group-hover:shadow-lg
+                         ${phase.status === 'in-progress' ? 'bg-white border-amber-200 shadow-md ring-4 ring-amber-500/5' : 
+                           phase.status === 'done' ? 'bg-slate-50 border-teal-200 opacity-75' : 'bg-white border-slate-100'}`}>
+                         
+                         {phase.status === 'in-progress' && <div className="absolute top-0 left-0 w-1 h-full bg-amber-400"></div>}
+                         {phase.status === 'done' && <div className="absolute top-0 right-0 p-2"><CheckCircle className="text-teal-500" size={20}/></div>}
+
+                         <span className={`text-xs font-bold tracking-widest uppercase mb-2 block ${phase.status === 'in-progress' ? 'text-amber-500' : 'text-slate-400'}`}>
+                            {phase.status === 'in-progress' ? t.current_phase : `Phase 0${idx+1}`}
+                         </span>
+                         
+                         <h4 className="text-xl font-bold text-slate-800 mb-2">{phase.title}</h4>
+                         <p className="text-slate-500 text-sm leading-relaxed mb-4">{phase.description}</p>
+                         
+                         <div className="flex justify-between items-center pt-4 border-t border-slate-50">
+                            <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">{phase.duration}</span>
+                            {phase.status === 'in-progress' && (
+                               <button onClick={() => markPhaseDone(phase)} className="text-xs font-bold text-white bg-slate-900 px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-1">
+                                 {t.mark_done} <CheckSquare size={12} />
+                               </button>
+                            )}
+                         </div>
+                      </div>
+                      
+                      {/* Mobile Line Connector (Hidden on Desktop) */}
+                      <div className="md:hidden absolute left-4 top-full h-12 w-0.5 bg-slate-200"></div>
+                   </div>
+                 ))}
+                 
+                 {/* Finish Flag */}
+                 <div className="flex justify-center mt-8 relative z-10">
+                    <div className="w-12 h-12 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-xl">
+                      <Flag />
+                    </div>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
