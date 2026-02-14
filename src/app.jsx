@@ -4,8 +4,7 @@ import {
   Calendar, Settings, User, Globe, ArrowRight, Sparkles, Send, 
   Plus, Trash2, Smile, Activity, Lightbulb, LogOut, Lock, Mail, 
   UserCircle, PenTool, ShieldCheck, Cloud, RefreshCw, Bell, 
-  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff, Map, Flag, Target,
-  CheckSquare, ArrowDown, ExternalLink, Save
+  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -16,17 +15,16 @@ import {
 import { 
   getFirestore, collection, addDoc, query, onSnapshot, 
   serverTimestamp, doc, setDoc, getDoc, deleteDoc, updateDoc, 
-  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  orderBy, limit, writeBatch
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
 
-// 1. API KEY SETUP (Compatible Fix)
-// Reverted to standard access to avoid ES2015 "import.meta" compilation errors.
-// If using Vercel, ensure your Environment Variables are mapped to 'process.env' or simply use the backup key for testing.
-const apiKey ="AIzaSyDIFVDCzuYoBG0ePSTesS3_gHGlG-3t6GM"; 
+// 1. GEMINI API KEY
+// Explicitly using your provided key to ensure connection works
+const apiKey = "AIzaSyDIFVDCzuYoBG0ePSTesS3_gHGlG-3t6GM"; 
 
+// 2. FIREBASE CONFIGURATION
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : {
@@ -49,6 +47,7 @@ const db = initializeFirestore(app, {
   })
 });
 
+// 3. STATIC APP ID
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'syntra-web-v2';
 
 // --- FALLBACK DATA ---
@@ -62,15 +61,11 @@ const getHybridUserId = (email) => {
 
 // --- GEMINI API HELPER ---
 const callGemini = async (prompt, systemInstruction = "") => {
-  const effectiveKey = apiKey || backupKey;
+  // Using the hardcoded key to guarantee connection
+  const effectiveKey = apiKey; 
   
-  if (!effectiveKey) {
-    console.error("No API Key found. Please set VITE_GEMINI_API_KEY in your environment.");
-    return "Error: API Key is missing. Please check Vercel settings.";
-  }
-  
-  // Use 'gemini-1.5-flash' as the primary model for better stability
-  const models = ["gemini-1.5-flash", "gemini-pro"];
+  // Models to try - added gemini-1.5-pro as a robust fallback
+  const models = ["gemini-1.5-flash", "gemini-2.5-flash-preview-09-2025", "gemini-pro"];
 
   for (const model of models) {
     try {
@@ -92,6 +87,7 @@ const callGemini = async (prompt, systemInstruction = "") => {
       );
 
       if (!response.ok) {
+        // Log detailed error for debugging
         const errText = await response.text();
         console.warn(`Model ${model} failed (${response.status}):`, errText);
         continue; 
@@ -127,7 +123,6 @@ const LANGUAGES = {
     dashboard: "Dashboard",
     chat: "Aura Guide",
     plan: "Smart Planner",
-    roadmap: "Life Roadmap",
     journal: "Neuro Journal",
     task_add: "Add Task",
     task_magic: "Magic Breakdown",
@@ -153,19 +148,7 @@ const LANGUAGES = {
     task_auto_updated: "Task updated:",
     offline_mode: "Offline",
     reconnect: "Retry",
-    connect_error: "Connection Issue",
-    roadmap_goal_placeholder: "What is your big ambition? (e.g., Become a Cyber Security Expert)",
-    generate_roadmap: "Generate Life Map",
-    roadmap_loading: "Analyzing feasibility & constructing path (this may take a moment)...",
-    current_phase: "Current Phase",
-    mark_done: "Mark Complete",
-    roadmap_limit_error: "Goal Feasibility Warning: Based on your current profile and load, this goal might be too overwhelming.",
-    roadmap_reset: "Reset Roadmap",
-    translate_plan: "Translate Plan",
-    translating: "Translating...",
-    roadmap_notes_label: "Personal Notes & Adjustments",
-    roadmap_notes_placeholder: "Add your own branches, extra resources, or modifications to the plan here...",
-    save_notes: "Save Notes"
+    connect_error: "Connection Issue"
   },
   ar: {
     welcome: "مرحباً بك في سينترا",
@@ -185,7 +168,6 @@ const LANGUAGES = {
     dashboard: "الرئيسية",
     chat: "المساعد (أورا)",
     plan: "المهام الذكية",
-    roadmap: "خارطة الطريق",
     journal: "المذكرات",
     task_add: "إضافة مهمة",
     task_magic: "تقسيم ذكي",
@@ -211,23 +193,11 @@ const LANGUAGES = {
     task_auto_updated: "تم تعديل:",
     offline_mode: "غير متصل",
     reconnect: "إعادة المحاولة",
-    connect_error: "مشكلة في الاتصال",
-    roadmap_goal_placeholder: "إيه حلمك الكبير؟ (مثلاً: أبقى خبير أمن سيبراني)",
-    generate_roadmap: "بناء الخارطة",
-    roadmap_loading: "جاري دراسة الجدوى وبناء المسار (ممكن ياخد وقت شوية)...",
-    current_phase: "المرحلة الحالية",
-    mark_done: "تم الإنجاز",
-    roadmap_limit_error: "تنبيه جدوى: بناءً على ملفك الحالي، الهدف ده ممكن يكون ضغط زيادة عليك.",
-    roadmap_reset: "حذف الخارطة",
-    translate_plan: "ترجمة الخطة",
-    translating: "جاري الترجمة...",
-    roadmap_notes_label: "ملاحظات وتعديلات شخصية",
-    roadmap_notes_placeholder: "اكتب هنا أي فروع زيادة، مصادر خارجية، أو تعديلات عايز تضيفها للخطة...",
-    save_notes: "حفظ الملاحظات"
+    connect_error: "مشكلة في الاتصال"
   }
 };
 
-// --- FULL 40 UNIQUE SJT QUESTIONS ---
+// --- FULL 40 UNIQUE SJT QUESTIONS (Restored) ---
 const FULL_SJT = [
     // --- CONSCIENTIOUSNESS (20 Items) ---
     { id: 1, trait: 'C', text_en: "It's Thursday evening, and you have a major biology assignment due on Monday morning. Your friends just messaged you in the group chat about a spontaneous weekend trip to the beach that starts tomorrow morning. You haven't started the assignment yet.", text_ar: "النهارده الخميس بالليل، وعندك واجب أحياء كبير لازم يتسلم الاثنين الصبح. صحابك بعتولك على الجروب إنهم طالعين رحلة للعين السخنة بكرة الصبح، وأنت لسه مابدأتش في الواجب خالص.", options_en: ["Decline the trip immediately to ensure the assignment is finished with high quality.", "Go on the trip but wake up early Sunday to rush through the work.", "Take your laptop and books with you, planning to work during the trip.", "Go on the trip and decide to copy the assignment from a friend later."], options_ar: ["أعتذر عن الرحلة فوراً عشان أضمن إني أخلص الواجب بجودة عالية.", "أطلع الرحلة بس أصحى بدري يوم الأحد أكروته.", "آخد اللابتوب والكتب معايا بنية إني أذاكر هناك.", "أطلع الرحلة وأبقى أنقل الواجب من حد صاحبي بعدين."] },
@@ -265,7 +235,7 @@ const FULL_SJT = [
     { id: 31, trait: 'O', text_en: "You are reading a book. Do you prefer:", text_ar: "بتقرأ كتاب. تفضل إيه؟", options_en: ["Science fiction or deep philosophy.", "Biographies of famous people.", "Action/Adventure.", "I don't like reading."], options_ar: ["خيال علمي أو فلسفة عميقة.", "سير ذاتية لمشاهير.", "أكشن ومغامرة.", "مبحبش القراءة."] },
     { id: 32, trait: 'O', text_en: "Someone suggests watching a documentary about the origin of the universe.", text_ar: "حد اقترح تتفرجوا على وثائقي عن نشأة الكون.", options_en: ["Sounds fascinating, let's watch.", "Okay, I'll watch it.", "Sounds boring.", "I'd rather watch a comedy."], options_ar: ["شكلها مذهلة، يلا نتفرج.", "ماشي، هتفرج.", "شكلها مملة.", "أفضل أتفرج على كوميدي."] },
     { id: 33, trait: 'O', text_en: "You have to write an essay. The teacher gives you a choice of topics.", text_ar: "لازم تكتب مقال. المدرس خيرك بين موضوعين.", options_en: ["'What if humans could fly?' (Creative)", "'My Summer Vacation' (Factual)", "Ask the teacher for an easier topic.", "Copy something from the internet."], options_ar: ["'ماذا لو البشر بيطيروا؟' (إبداعي)", "'أجازتي الصيفية' (واقعي)", "أطلب موضوع أسهل.", "أنقل حاجة من النت."] },
-    { id: 34, trait: 'O', text_en: "You see a device you've never seen before.", text_ar: "شفت جهاز عمرك ما شفته قبل كده.", options_en: ["Try to figure out how it works and take it apart if possible.", "Read the manual.", "Ask someone what it does.", "Ignore it."], options_ar: ["أحاول أفهم بيشتغل ازاي وأفكه لو ينفع.", "أقرا الكتالوج.", "أسأل حد ده بيعمل إيه.", "أطنشها."] },
+    { id: 34, trait: 'O', text_en: "You see a device you've never seen before.", text_ar: "شفت جهاز عمرك ما شفته قبل كده.", options_en: ["Try to figure out how it works and take it apart if possible.", "Read the manual.", "Ask someone what it does.", "Ignore it."], options_ar: ["أحاول أفهم بيشتغل ازاي وأفكه لو ينفع.", "أقرا الكتالوج.", "أسأل حد ده بيعمل إيه.", "أطنشه."] },
     { id: 35, trait: 'O', text_en: "Do you enjoy discussions about theoretical problems that have no correct answer?", text_ar: "بتستمتع بالمناقشات عن مشاكل نظرية ملهاش حل صح؟", options_en: ["Love them; they stimulate my mind.", "They are okay sometimes.", "No, I prefer practical problems.", "Hate them; they are pointless."], options_ar: ["بحبها جداً؛ بتشغل مخي.", "ماشي حالها ساعات.", "لأ، بفضل المشاكل العملية.", "بكرهها؛ ملهاش فايدة."] },
     { id: 36, trait: 'O', text_en: "A friend invites you to a poetry slam (people reading poems).", text_ar: "صاحبك عزمك على أمسية شعرية.", options_en: ["Go enthusiastically to hear the metaphors.", "Go just to hang out with the friend.", "Politely decline.", "Laugh at the idea."], options_ar: ["أروح بحماس عشان أسمع التشبيهات.", "أروح بس عشان أخرج مع صاحبي.", "أرفض بذوق.", "أضحك على الفكرة."] },
     { id: 37, trait: 'O', text_en: "When you are in nature, do you stop to look at details like shapes of leaves?", text_ar: "لما بتكون في الطبيعة، بتقف تتأمل تفاصيل زي شكل ورق الشجر؟", options_en: ["Yes, I often find beauty in small details.", "Sometimes.", "Rarely, I just walk.", "Never."], options_ar: ["آه، غالباً بلاقي جمال في التفاصيل الصغيرة.", "أحياناً.", "نادراً، بمشي وخلاص.", "أبداً."] },
@@ -630,7 +600,6 @@ const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline })
       <div className="w-24 bg-white rounded-[2.5rem] shadow-xl border border-slate-100 flex flex-col items-center py-8 gap-6 z-10">
         <NavIcon icon={<MessageCircle />} active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} />
         <NavIcon icon={<Calendar />} active={activeTab === 'plan'} onClick={() => setActiveTab('plan')} />
-        <NavIcon icon={<Map />} active={activeTab === 'roadmap'} onClick={() => setActiveTab('roadmap')} />
         <NavIcon icon={<BookOpen />} active={activeTab === 'journal'} onClick={() => setActiveTab('journal')} />
         
         <div className="mt-auto relative">
@@ -645,7 +614,6 @@ const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline })
       <div className="flex-1 bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden relative flex flex-col">
         {activeTab === 'chat' && <ChatModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
         {activeTab === 'plan' && <PlannerModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
-        {activeTab === 'roadmap' && <RoadmapModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
         {activeTab === 'journal' && <JournalModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
       </div>
 
@@ -681,7 +649,6 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentTasks, setCurrentTasks] = useState([]);
-  const [roadmap, setRoadmap] = useState([]);
   const scrollRef = useRef(null);
 
   // Load Chat History
@@ -707,16 +674,6 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     return () => unsub();
   }, [userId, isOffline]);
 
-  // Fetch Roadmap for Context
-  useEffect(() => {
-    if(!userId || isOffline) return;
-    const q = query(collection(db, 'artifacts', appId, 'users', userId, 'roadmap'), orderBy("order"));
-    const unsub = onSnapshot(q, (snap) => {
-      setRoadmap(snap.docs.map(d => ({id: d.id, ...d.data()})));
-    }, () => {});
-    return () => unsub();
-  }, [userId, isOffline]);
-
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, loading]);
 
   const send = async () => {
@@ -725,7 +682,7 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     setInput('');
     setLoading(true);
 
-    // 1. Optimistic Update
+    // 1. Optimistic Update (Show user msg immediately)
     if (!isOffline) {
         await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
             role: 'user', text, createdAt: serverTimestamp()
@@ -735,127 +692,56 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     }
 
     try {
-        // 2. Prepare Detailed Context
-        const taskListString = currentTasks.map(t => `- [ID:${t.id}] ${t.text} (Done: ${t.done})`).join('\n');
+        // 2. Prepare Context
+        const taskListString = currentTasks.map(t => `- ${t.text} (ID: ${t.id})`).join('\n');
         
-        const activePhase = roadmap.find(r => r.status === 'in-progress') || roadmap.find(r => r.status === 'pending');
-        const roadmapContext = activePhase 
-           ? `CURRENT ROADMAP PHASE [ID:${activePhase.id}]: ${activePhase.title} (Status: ${activePhase.status}). Desc: ${activePhase.description}.`
-           : "NO ACTIVE ROADMAP.";
-
-        // 3. Trait Analysis & Strategy (Big 5 Logic)
-        const cType = profile.c_score >= 50 ? 'HIGH_C' : 'LOW_C';
-        const oType = profile.o_score >= 50 ? 'HIGH_O' : 'LOW_O';
-        
-        let strategy = "";
-        
-        if (cType === 'HIGH_C') {
-            strategy += "- **HIGH C STRATEGY (Structure):** This user loves clear goals and lists. Give them a detailed breakdown of the day. Make them conscious of the plan. Use words like 'checklist', 'plan', 'schedule'.\n";
-        } else {
-            strategy += "- **LOW C STRATEGY (Stealth & Energy):** This user gets overwhelmed by big plans. DO NOT give a long list. Hide the plan. Just give them ONE small, easy chunk to start. Use gamification and high energy. Say things like 'Let's just crush this one thing in 10 mins!'. Be the energetic friend pushing them.\n";
-        }
-
-        if (oType === 'HIGH_O') {
-            strategy += "- **HIGH O STRATEGY (Curiosity):** Motivated by 'Why?' and concepts. Connect their task to a big idea. Ask curious questions to trigger their deep thinking. Don't just give orders.\n";
-        } else {
-            strategy += "- **LOW O STRATEGY (Practicality):** Motivated by 'How?'. Needs clear, step-by-step instructions. Focus on practical examples and exam relevance. Avoid abstract theory.\n";
-        }
-
-        // 4. Advanced System Prompt
+        // 3. Strict System Prompt for Egyptian Arabic
         const systemPrompt = `
-          IDENTITY: You are "Aura", the user's close, supportive friend (or cool mom). You are positive, warm, and observant. You are NOT a robot; you are a companion.
-          
-          USER: ${profile.name}, Age ${profile.age}. Traits: C=${profile.c_score}, O=${profile.o_score}.
-          LANGUAGE: ${lang === 'ar' ? 'Egyptian Arabic (Masri Slang ONLY - friendly & casual)' : 'English (Casual & Warm)'}.
-          
-          YOUR SPECIFIC COACHING STRATEGY:
-          ${strategy}
-
-          CONTEXT:
-          DAILY TASKS:
+          IDENTITY: You are "Aura", a sophisticated AI mentor using the BIG-5 personality model.
+          USER PROFILE: Name: ${profile.name}, Age: ${profile.age}, C:${profile.c_score}, O:${profile.o_score}.
+          CURRENT TASKS:
           ${taskListString}
-          
-          LONG TERM ROADMAP:
-          ${roadmapContext}
 
-          GOAL:
-          1. **INITIATE:** If the user is quiet or vague, ask friendly questions to extract their plan for the day.
-          2. **GUIDE:** Break down their goals based on your STRATEGY (Detailed for High C, Hidden/Small for Low C).
-          3. **CHECK:** Ask about progress on specific tasks or roadmap phases.
-          4. **CONNECT:** Relate daily tasks to the Long Term Roadmap.
+          CRITICAL LANGUAGE INSTRUCTIONS:
+          - The user's interface language is: ${lang === 'ar' ? 'Arabic' : 'English'}.
+          - IF 'ar': You MUST speak in EGYPTIAN ARABIC (Masri) slang. Be friendly, helpful, and sound like a cool mentor from Cairo. Do NOT use Modern Standard Arabic (Fusha).
+          - IF 'en': Speak in clear English.
 
-          TOOLS (Use strictly on a new line):
-          - [ADD: task text] -> Adds a daily task.
-          - [MARK_DONE: task_id] -> Marks a daily task as complete.
-          - [ROADMAP_CHECK: phase_id] -> Updates progress on the long-term roadmap phase.
-          
-          TONE:
-          - Extremely friendly, supportive, and casual. 
-          - Like a best friend or supportive mom checking in.
+          TOOLS & BEHAVIOR:
+          - If the user wants to add a task, strictly write on a new line: [ADD: task text]
+          - If the user wants to update a task, strictly write: [MOD: old_task_text -> new_task_text]
+          - Keep responses concise and encouraging.
         `;
 
-        // 5. Call AI
+        // 4. Call AI
         const aiRaw = await callGemini(text, systemPrompt);
         let aiText = aiRaw;
         
-        // 6. Parse Commands
-        // Handle ADD
-        const addMatch = aiRaw.match(/\[ADD:\s*(.*?)\]/g);
+        // 5. Parse Commands (ADD/MOD)
+        const modMatch = aiRaw.match(/\[MOD:\s*(.*?)\s*->\s*(.*?)\]/);
+        if (modMatch) {
+            const oldText = modMatch[1].trim();
+            const newText = modMatch[2].trim();
+            aiText = aiRaw.replace(/\[MOD:.*?\]/, "").trim(); 
+            const targetTask = currentTasks.find(t => t.text.includes(oldText));
+            if (targetTask && !isOffline) {
+               await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'tasks', targetTask.id), { text: newText });
+               aiText += `\n(✓ ${t.task_auto_updated} ${newText})`;
+            }
+        }
+
+        const addMatch = aiRaw.match(/\[ADD:\s*(.*?)\]/);
         if (addMatch) {
-            for (const match of addMatch) {
-                const newText = match.replace(/\[ADD:\s*|\]/g, "").trim();
-                aiText = aiText.replace(match, "").trim();
-                const isDuplicate = currentTasks.some(t => t.text.toLowerCase() === newText.toLowerCase());
-                if (!isDuplicate && !isOffline) {
-                    await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), { 
-                        text: newText, done: false, type: 'ai-smart', createdAt: serverTimestamp() 
-                    });
-                }
+            const newText = addMatch[1].trim();
+            aiText = aiRaw.replace(/\[ADD:.*?\]/, "").trim();
+            const isDuplicate = currentTasks.some(t => t.text.toLowerCase() === newText.toLowerCase());
+            if (!isDuplicate && !isOffline) {
+               await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), { text: newText, done: false, type: 'ai-smart', createdAt: serverTimestamp() });
+               aiText += `\n(✓ ${t.task_auto_added} ${newText})`;
             }
         }
 
-        // Handle MARK_DONE
-        const doneMatch = aiRaw.match(/\[MARK_DONE:\s*(.*?)\]/g);
-        if (doneMatch) {
-            for (const match of doneMatch) {
-                const taskId = match.replace(/\[MARK_DONE:\s*|\]/g, "").trim();
-                aiText = aiText.replace(match, "").trim();
-                if (!isOffline) {
-                    await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'tasks', taskId), { done: true });
-                }
-            }
-        }
-
-        // Handle ROADMAP_CHECK (Simulated progress tick)
-        const roadMatch = aiRaw.match(/\[ROADMAP_CHECK:\s*(.*?)\]/g);
-        if (roadMatch) {
-             for (const match of roadMatch) {
-                const phaseId = match.replace(/\[ROADMAP_CHECK:\s*|\]/g, "").trim();
-                aiText = aiText.replace(match, "").trim();
-                // Mark the roadmap phase as done or progress it
-                if (!isOffline && phaseId) {
-                    // We simply mark it as done for now to show progress, 
-                    // or ideally increment a progress bar if we had one.
-                    // For the "Tick this chunk" requirement:
-                    await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', phaseId), { 
-                        status: 'done'
-                    });
-                    
-                    // Also try to find the next one to set to in-progress
-                    const currentPhase = roadmap.find(r => r.id === phaseId);
-                    if (currentPhase) {
-                        const nextPhase = roadmap.find(r => r.order === currentPhase.order + 1);
-                        if (nextPhase) {
-                             await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', nextPhase.id), { 
-                                status: 'in-progress'
-                            });
-                        }
-                    }
-                }
-             }
-        }
-
-        // 7. Save Response
+        // 6. Save Response
         if (!isOffline) {
             await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
                 role: 'ai', text: aiText, createdAt: serverTimestamp()
@@ -865,13 +751,15 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
         }
 
     } catch (e) {
-        const errMsg = e.message || (lang === 'ar' ? "معلش النت فصل، ثانية وراجعلك." : "Connection blip. One sec.");
+        // Show error message in chat if AI fails
+        const errMsg = e.message || (lang === 'ar' ? "معلش في مشكلة في الاتصال، حاول تاني." : "Connection failed. Please check internet.");
+        
         if (!isOffline) {
             await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
-                role: 'ai', text: `⚠️ ${errMsg}`, createdAt: serverTimestamp()
+                role: 'ai', text: `⚠️ Error: ${errMsg}`, createdAt: serverTimestamp()
             });
         } else {
-            setMsgs(prev => [...prev, {id: Date.now()+2, role: 'ai', text: `⚠️ ${errMsg}`}]);
+            setMsgs(prev => [...prev, {id: Date.now()+2, role: 'ai', text: `⚠️ Error: ${errMsg}`}]);
         }
     }
     
@@ -884,338 +772,16 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
          {msgs.length === 0 && <div className="text-center text-slate-400 mt-20 opacity-50">{t.chat_placeholder}</div>}
          {msgs.map((m) => (
             <div key={m.id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
-              <div className={`max-w-[85%] p-6 rounded-3xl text-lg shadow-sm leading-relaxed ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'} ${m.text.includes('⚠️') ? 'bg-red-50 text-red-600 border-red-200' : ''}`}>
-                  {m.text}
-              </div>
+              <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'} ${m.text.includes('⚠️') ? 'bg-red-50 text-red-600 border-red-200' : ''}`}>{m.text}</div>
             </div>
           ))}
-          {loading && <div className="flex justify-start"><div className="bg-white p-4 rounded-3xl text-slate-400 italic text-sm border border-slate-100"><Sparkles size={14} className="animate-spin inline mr-2"/>Aura thinking...</div></div>}
+          {loading && <div className="flex justify-start"><div className="bg-white p-4 rounded-3xl text-slate-400 italic text-sm"><Sparkles size={14} className="animate-spin inline mr-2"/>Aura thinking...</div></div>}
           <div ref={scrollRef} />
        </div>
        <div className="p-6 bg-white border-t border-slate-100 flex gap-4">
-         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder={t.chat_placeholder} className="flex-1 bg-slate-100 rounded-2xl p-5 outline-none focus:ring-2 focus:ring-teal-500/20 text-lg transition-all" />
-         <button onClick={send} disabled={loading} className="bg-teal-500 text-white p-5 rounded-2xl hover:bg-teal-600 disabled:opacity-50 hover:shadow-lg hover:shadow-teal-500/20 transition-all"><Send /></button>
+         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder={t.chat_placeholder} className="flex-1 bg-slate-100 rounded-2xl p-5 outline-none focus:ring-2 focus:ring-teal-500/20 text-lg" />
+         <button onClick={send} disabled={loading} className="bg-teal-500 text-white p-5 rounded-2xl hover:bg-teal-600 disabled:opacity-50"><Send /></button>
        </div>
-    </div>
-  );
-};
-
-// --- ROADMAP MODULE (NEW) ---
-const RoadmapModule = ({ t, userId, lang, profile, appId, isOffline }) => {
-  const [goal, setGoal] = useState('');
-  const [phases, setPhases] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [notes, setNotes] = useState('');
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [notesSaving, setNotesSaving] = useState(false);
-
-  // Load Roadmap Phases
-  useEffect(() => {
-    if (!userId || isOffline) return;
-    const q = query(collection(db, 'artifacts', appId, 'users', userId, 'roadmap'), orderBy("order"));
-    const unsub = onSnapshot(q, (snap) => {
-        setPhases(snap.docs.map(d => ({id: d.id, ...d.data()})));
-    }, (err) => console.log("Roadmap Offline", err));
-    return () => unsub();
-  }, [userId, isOffline]);
-
-  // Load Personal Notes
-  useEffect(() => {
-    if (!userId || isOffline) return;
-    const loadNotes = async () => {
-        const docRef = doc(db, 'artifacts', appId, 'users', userId, 'data', 'roadmap_notes');
-        const snap = await getDoc(docRef);
-        if (snap.exists()) setNotes(snap.data().text || '');
-    };
-    loadNotes();
-  }, [userId, isOffline]);
-
-  const saveNotes = async () => {
-     if (isOffline || !userId) return;
-     setNotesSaving(true);
-     await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'data', 'roadmap_notes'), { text: notes }, { merge: true });
-     setNotesSaving(false);
-  };
-
-  const generateRoadmap = async () => {
-    if (!goal.trim()) return;
-    setLoading(true);
-    setError(null);
-
-    const prompt = `
-      ACT AS: Expert Academic & Life Counselor.
-      USER: Age ${profile.age}. Interest: "${goal}".
-      PROFILE: Conscientiousness ${profile.c_score}, Openness ${profile.o_score}.
-      LANGUAGE: ${lang === 'ar' ? 'Arabic' : 'English'}.
-      
-      TASK: 
-      1. Assess FEASIBILITY. If the user is too young (e.g. < 12 wanting to be a neurosurgeon now) or the goal is impossible, return JSON with "error".
-      2. If feasible, create a comprehensive, detailed Roadmap with 15-20 distinct steps/phases.
-      3. The roadmap must be WIDE and detailed. Include specific learning resources (book titles, course names, tools) for each step.
-      
-      RETURN ONLY valid JSON array: 
-      [
-        { 
-          "title": "Step Title", 
-          "description": "Detailed description of what to learn/do.", 
-          "duration": "e.g. 2 weeks", 
-          "type": "learning/practice/milestone",
-          "resources": ["Book Name", "Course Name", "Tool Name"]
-        } 
-      ]
-      OR { "error": "Reason why this goal exceeds limitations currently." }
-    `;
-
-    try {
-      const resultRaw = await callGemini(prompt);
-      const jsonStr = resultRaw.match(/\[.*\]|\{.*\}/s)?.[0]; // Extract JSON
-      if (!jsonStr) throw new Error("Failed to parse AI plan.");
-      
-      const result = JSON.parse(jsonStr);
-
-      if (result.error) {
-        setError(result.error);
-        setLoading(false);
-        return;
-      }
-
-      // Delete existing
-      if (!isOffline) {
-        // Batch delete old phases
-        const q = query(collection(db, 'artifacts', appId, 'users', userId, 'roadmap'));
-        const snap = await getFirestore(app) // Helper to get snapshot for batch delete if needed, or iterate
-        // Ideally use batch, but for simplicity:
-        phases.forEach(async (p) => {
-           await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', p.id));
-        });
-
-        // Add new
-        if (Array.isArray(result)) {
-           result.forEach(async (phase, idx) => {
-             await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'roadmap'), {
-               ...phase,
-               order: idx,
-               status: idx === 0 ? 'in-progress' : 'pending',
-               createdAt: serverTimestamp()
-             });
-           });
-        }
-      }
-
-    } catch (e) {
-      console.error(e);
-      setError("AI Generation Failed. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const translateRoadmap = async () => {
-    if (phases.length === 0 || isOffline) return;
-    setIsTranslating(true);
-    
-    // Construct prompt with current content
-    const content = JSON.stringify(phases.map(p => ({
-        id: p.id,
-        title: p.title,
-        description: p.description,
-        duration: p.duration,
-        resources: p.resources || []
-    })));
-
-    const targetLang = lang === 'ar' ? 'Arabic' : 'English';
-    const prompt = `Translate the following JSON array of roadmap steps into ${targetLang}. Keep the ID unchanged. Return ONLY JSON array. \n\n${content}`;
-
-    try {
-        const resRaw = await callGemini(prompt);
-        const jsonStr = resRaw.match(/\[.*\]/s)?.[0];
-        if (!jsonStr) throw new Error("Translation Parse Error");
-        
-        const translated = JSON.parse(jsonStr);
-        
-        // Batch update
-        const batch = writeBatch(db);
-        translated.forEach(item => {
-            const ref = doc(db, 'artifacts', appId, 'users', userId, 'roadmap', item.id);
-            batch.update(ref, {
-                title: item.title,
-                description: item.description,
-                duration: item.duration,
-                resources: item.resources
-            });
-        });
-        await batch.commit();
-
-    } catch (e) {
-        console.error("Translation failed", e);
-    } finally {
-        setIsTranslating(false);
-    }
-  };
-
-  const markPhaseDone = async (phase) => {
-     if (isOffline) return;
-     await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', phase.id), { status: 'done' });
-     
-     // Find next phase
-     const nextPhase = phases.find(p => p.order === phase.order + 1);
-     if (nextPhase) {
-         await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', nextPhase.id), { status: 'in-progress' });
-     }
-  };
-
-  const clearMap = async () => {
-    if (isOffline) return;
-    phases.forEach(async (p) => {
-        await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', p.id));
-     });
-    setGoal('');
-    setNotes('');
-    await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'data', 'roadmap_notes'), { text: '' });
-  };
-
-  return (
-    <div className="h-full flex flex-col bg-slate-50/30 overflow-hidden relative">
-      {phases.length === 0 ? (
-         // --- EMPTY STATE / INPUT ---
-         <div className="flex-1 flex flex-col items-center justify-center p-10 animate-in fade-in zoom-in duration-500 overflow-y-auto">
-             <div className="w-20 h-20 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-teal-500/20">
-               <Target size={40} />
-             </div>
-             <h2 className="text-3xl font-bold text-slate-800 mb-4 text-center">{t.roadmap}</h2>
-             <p className="text-slate-500 mb-8 text-center max-w-md">{t.roadmap_goal_placeholder}</p>
-             
-             <div className="w-full max-w-lg relative">
-                <input 
-                  value={goal} 
-                  onChange={e => setGoal(e.target.value)} 
-                  placeholder={t.roadmap_goal_placeholder}
-                  className="w-full p-5 pl-6 pr-16 rounded-2xl border-2 border-slate-200 outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all text-lg shadow-sm"
-                />
-                <button 
-                  onClick={generateRoadmap}
-                  disabled={loading || !goal}
-                  className="absolute right-2 top-2 bottom-2 bg-slate-900 text-white px-6 rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 transition-all flex items-center justify-center"
-                >
-                  {loading ? <RefreshCw className="animate-spin" /> : <ArrowRight />}
-                </button>
-             </div>
-             
-             {loading && <p className="mt-4 text-teal-600 font-medium animate-pulse">{t.roadmap_loading}</p>}
-             {error && (
-               <div className="mt-6 p-4 bg-red-50 text-red-600 rounded-xl border border-red-100 flex items-center gap-3 max-w-md">
-                 <AlertTriangle className="shrink-0" />
-                 <p className="text-sm font-medium">{t.roadmap_limit_error} <br/><span className="text-xs opacity-75">Reason: {error}</span></p>
-               </div>
-             )}
-         </div>
-      ) : (
-        // --- VISUALIZATION ---
-        <div className="flex-1 flex flex-col relative h-full">
-           <div className="p-4 md:p-6 border-b border-slate-100 bg-white/50 backdrop-blur-sm flex justify-between items-center z-10 sticky top-0">
-              <div>
-                <h3 className="text-lg md:text-xl font-bold text-slate-800 line-clamp-1">{goal || "My Journey"}</h3>
-                <p className="text-xs md:text-sm text-slate-400">{phases.filter(p => p.status === 'done').length} / {phases.length} Steps</p>
-              </div>
-              <div className="flex gap-2">
-                 <button onClick={translateRoadmap} disabled={isTranslating} className="text-xs md:text-sm text-blue-600 bg-blue-50 hover:bg-blue-100 font-bold px-3 py-2 rounded-lg flex items-center gap-2 transition-all">
-                    {isTranslating ? <RefreshCw className="animate-spin" size={14}/> : <Globe size={14} />} {isTranslating ? t.translating : t.translate_plan}
-                 </button>
-                 <button onClick={clearMap} className="text-xs md:text-sm text-red-400 hover:text-red-600 font-bold border border-red-100 px-3 py-2 rounded-lg hover:bg-red-50">{t.roadmap_reset}</button>
-              </div>
-           </div>
-           
-           <div className="flex-1 overflow-y-auto p-4 md:p-10 relative">
-              {/* Central Line */}
-              <div className="absolute left-[20px] md:left-[50%] top-10 bottom-10 w-1 bg-slate-200 -ml-0.5 rounded-full"></div>
-              
-              <div className="max-w-4xl mx-auto space-y-0 relative">
-                 {phases.map((phase, idx) => (
-                   <div key={phase.id} className={`relative flex items-center mb-8 md:mb-12 group md:flex-row flex-row ${idx % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'}`}>
-                      
-                      {/* Node Circle (Desktop & Mobile Unified Logic for Line) */}
-                      <div className={`absolute left-[20px] md:left-1/2 -translate-x-1/2 w-8 h-8 rounded-full border-4 z-10 flex items-center justify-center bg-white transition-all duration-500
-                         ${phase.status === 'done' ? 'border-teal-500' : phase.status === 'in-progress' ? 'border-amber-400 scale-110' : 'border-slate-200'}`}>
-                         {phase.status === 'done' && <div className="w-2 h-2 bg-teal-500 rounded-full"></div>}
-                         <span className="md:hidden absolute -left-6 text-xs font-bold text-slate-300 w-4 text-right">{idx+1}</span>
-                      </div>
-
-                      {/* Spacer for desktop alternation */}
-                      <div className="hidden md:block w-1/2"></div>
-
-                      {/* Content Card */}
-                      <div className={`w-[calc(100%-50px)] ml-[50px] md:ml-0 md:w-[45%] p-5 md:p-6 rounded-3xl border transition-all duration-300 relative overflow-hidden group-hover:shadow-lg
-                         ${phase.status === 'in-progress' ? 'bg-white border-amber-200 shadow-md ring-4 ring-amber-500/5' : 
-                           phase.status === 'done' ? 'bg-slate-50 border-teal-200 opacity-75' : 'bg-white border-slate-100'}
-                         ${idx % 2 === 0 ? 'md:mr-auto md:ml-8' : 'md:ml-auto md:mr-8'}
-                       `}>
-                         
-                         {phase.status === 'in-progress' && <div className="absolute top-0 left-0 w-1 h-full bg-amber-400"></div>}
-                         {phase.status === 'done' && <div className="absolute top-0 right-0 p-2"><CheckCircle className="text-teal-500" size={20}/></div>}
-
-                         <div className="flex justify-between items-start mb-2">
-                            <span className={`text-xs font-bold tracking-widest uppercase block ${phase.status === 'in-progress' ? 'text-amber-500' : 'text-slate-400'}`}>
-                                {phase.status === 'in-progress' ? t.current_phase : `Step 0${idx+1}`}
-                            </span>
-                            <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">{phase.duration}</span>
-                         </div>
-                         
-                         <h4 className="text-lg md:text-xl font-bold text-slate-800 mb-2">{phase.title}</h4>
-                         <p className="text-slate-500 text-sm leading-relaxed mb-4">{phase.description}</p>
-                         
-                         {/* Resources Section */}
-                         {phase.resources && phase.resources.length > 0 && (
-                             <div className="mb-4 flex flex-wrap gap-2">
-                                 {phase.resources.map((res, i) => (
-                                     <span key={i} className="text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-full flex items-center gap-1">
-                                         <ExternalLink size={10} /> {res}
-                                     </span>
-                                 ))}
-                             </div>
-                         )}
-                         
-                         {phase.status === 'in-progress' && (
-                             <div className="pt-4 border-t border-slate-50 flex justify-end">
-                               <button onClick={() => markPhaseDone(phase)} className="text-xs font-bold text-white bg-slate-900 px-4 py-2 rounded-xl hover:bg-slate-800 transition-colors flex items-center gap-2">
-                                 {t.mark_done} <CheckSquare size={14} />
-                               </button>
-                             </div>
-                         )}
-                      </div>
-                   </div>
-                 ))}
-                 
-                 {/* Finish Flag */}
-                 <div className="flex justify-start md:justify-center pl-[2px] md:pl-0 mt-8 relative z-10 mb-12">
-                    <div className="w-12 h-12 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-xl border-4 border-white">
-                      <Flag />
-                    </div>
-                 </div>
-
-                 {/* Editable Notes Section */}
-                 <div className="mt-12 pt-8 border-t border-slate-200">
-                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                        <div className="flex justify-between items-center mb-4">
-                            <h4 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                <Edit3 size={18} className="text-teal-500"/> {t.roadmap_notes_label}
-                            </h4>
-                            <button onClick={saveNotes} disabled={notesSaving} className="text-sm bg-teal-50 text-teal-600 px-3 py-1 rounded-lg font-bold hover:bg-teal-100 transition-colors flex items-center gap-2">
-                                {notesSaving ? <RefreshCw className="animate-spin" size={14}/> : <Save size={14}/>} {t.save_notes}
-                            </button>
-                        </div>
-                        <textarea 
-                            value={notes}
-                            onChange={(e) => setNotes(e.target.value)}
-                            className="w-full h-40 p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none focus:border-teal-500 transition-all text-slate-700 resize-none"
-                            placeholder={t.roadmap_notes_placeholder}
-                        />
-                    </div>
-                 </div>
-              </div>
-           </div>
-        </div>
-      )}
     </div>
   );
 };
