@@ -22,7 +22,8 @@ import {
 
 // --- CONFIGURATION ---
 
-const apiKey = "AIzaSyCpJ2DVSaQaT84_cQlGIOev7tCSiqkNR1U"; 
+// FIXED: Set to empty string to allow environment key injection
+const apiKey = ""; 
 
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
@@ -673,7 +674,6 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const [currentTasks, setCurrentTasks] = useState([]);
   const [roadmap, setRoadmap] = useState([]);
   const scrollRef = useRef(null);
-  const hasInitialized = useRef(false);
 
   // Load Chat History
   useEffect(() => {
@@ -708,28 +708,6 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     return () => unsub();
   }, [userId, isOffline]);
 
-  // Auto-initiate conversation if empty
-  useEffect(() => {
-     if (msgs.length === 0 && !loading && !hasInitialized.current && userId) {
-         hasInitialized.current = true;
-         // Simulate Aura starting the convo
-         const startMsg = lang === 'ar' 
-            ? `أهلاً يا ${profile.name}! 🌟 يومك عامل إيه النهاردة؟ ناوي على إيه؟` 
-            : `Hey ${profile.name}! 🌟 How's your day going? What's on your mind for today?`;
-         
-         // Only add locally first or save to db
-         // We'll just call send with a hidden prompt to trigger the AI to start properly
-         // But for simplicity, let's just wait for user. Or better, add a system welcome msg.
-         // Actually, let's do nothing and let the user start, OR add a "welcome" message from AI
-         const initChat = async () => {
-             await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
-                role: 'ai', text: startMsg, createdAt: serverTimestamp()
-             });
-         };
-         initChat();
-     }
-  }, [msgs.length, userId]);
-
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, loading]);
 
   const send = async () => {
@@ -756,53 +734,55 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
            ? `CURRENT ROADMAP PHASE [ID:${activePhase.id}]: ${activePhase.title} (Status: ${activePhase.status}). Desc: ${activePhase.description}.`
            : "NO ACTIVE ROADMAP.";
 
-        // 3. Trait Analysis & Strategy
+        // 3. Trait Analysis & Strategy (Big 5 Logic)
         const cType = profile.c_score >= 50 ? 'HIGH_C' : 'LOW_C';
         const oType = profile.o_score >= 50 ? 'HIGH_O' : 'LOW_O';
         
         let strategy = "";
+        
         if (cType === 'HIGH_C') {
-            strategy += "TRAIT C (High): Needs visible results/clear goals. Provide structured plans, detailed steps, and progress summaries. Be the 'Manager Mom'. ";
+            strategy += "- **HIGH C STRATEGY (Structure):** This user loves clear goals and lists. Give them a detailed breakdown of the day. Make them conscious of the plan. Use words like 'checklist', 'plan', 'schedule'.\n";
         } else {
-            strategy += "TRAIT C (Low): Needs short-term wins/external push. HIDE the 'big plan'. Give small, immediate chunks. Gamify it. Be the 'Energetic Bestie'. ";
+            strategy += "- **LOW C STRATEGY (Stealth & Energy):** This user gets overwhelmed by big plans. DO NOT give a long list. Hide the plan. Just give them ONE small, easy chunk to start. Use gamification and high energy. Say things like 'Let's just crush this one thing in 10 mins!'. Be the energetic friend pushing them.\n";
         }
 
         if (oType === 'HIGH_O') {
-            strategy += "TRAIT O (High): Motivated by concepts/curiosity. Ask 'Why?'. Connect ideas. Avoid repetition. Focus on the 'Big Picture'. ";
+            strategy += "- **HIGH O STRATEGY (Curiosity):** Motivated by 'Why?' and concepts. Connect their task to a big idea. Ask curious questions to trigger their deep thinking. Don't just give orders.\n";
         } else {
-            strategy += "TRAIT O (Low): Motivated by practical examples/steps. Needs clear instructions, repetition, exam focus. Avoid deep theory. Focus on 'How-To'. ";
+            strategy += "- **LOW O STRATEGY (Practicality):** Motivated by 'How?'. Needs clear, step-by-step instructions. Focus on practical examples and exam relevance. Avoid abstract theory.\n";
         }
 
         // 4. Advanced System Prompt
         const systemPrompt = `
-          IDENTITY: You are "Aura", the user's close, supportive friend (or cool mom). You are positive, warm, and observant.
-          USER: ${profile.name}, Age ${profile.age}. Traits: C=${profile.c_score}, O=${profile.o_score}.
-          LANGUAGE: ${lang === 'ar' ? 'Egyptian Arabic (Masri Slang ONLY)' : 'English'}.
+          IDENTITY: You are "Aura", the user's close, supportive friend (or cool mom). You are positive, warm, and observant. You are NOT a robot; you are a companion.
           
-          YOUR STRATEGY (${cType} + ${oType}):
+          USER: ${profile.name}, Age ${profile.age}. Traits: C=${profile.c_score}, O=${profile.o_score}.
+          LANGUAGE: ${lang === 'ar' ? 'Egyptian Arabic (Masri Slang ONLY - friendly & casual)' : 'English (Casual & Warm)'}.
+          
+          YOUR SPECIFIC COACHING STRATEGY:
           ${strategy}
 
           CONTEXT:
           DAILY TASKS:
           ${taskListString}
           
-          LONG TERM:
+          LONG TERM ROADMAP:
           ${roadmapContext}
 
           GOAL:
-          1. DIAGNOSE: If they haven't shared their plan, ask friendly questions to extract it.
-          2. GUIDE: Break down their goals into tasks based on their STRATEGY (Structured for High C, Hidden/Small for Low C).
-          3. CHECK: Ask about progress on specific tasks. 
-          4. CONNECT: Relate daily tasks to the Long Term Roadmap.
+          1. **INITIATE:** If the user is quiet or vague, ask friendly questions to extract their plan for the day.
+          2. **GUIDE:** Break down their goals based on your STRATEGY (Detailed for High C, Hidden/Small for Low C).
+          3. **CHECK:** Ask about progress on specific tasks or roadmap phases.
+          4. **CONNECT:** Relate daily tasks to the Long Term Roadmap.
 
-          TOOLS (Output these commands on a new line if needed):
+          TOOLS (Use strictly on a new line):
           - [ADD: task text] -> Adds a daily task.
           - [MARK_DONE: task_id] -> Marks a daily task as complete.
           - [ROADMAP_CHECK: phase_id] -> Updates progress on the long-term roadmap phase.
           
           TONE:
-          - Friendly, casual, encouraging. 
-          - Don't lecture. Chat like a human.
+          - Extremely friendly, supportive, and casual. 
+          - Like a best friend or supportive mom checking in.
         `;
 
         // 5. Call AI
@@ -841,10 +821,28 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
         const roadMatch = aiRaw.match(/\[ROADMAP_CHECK:\s*(.*?)\]/g);
         if (roadMatch) {
              for (const match of roadMatch) {
+                const phaseId = match.replace(/\[ROADMAP_CHECK:\s*|\]/g, "").trim();
                 aiText = aiText.replace(match, "").trim();
-                // In a real app, we might increment a percentage. 
-                // Here we just ack internally or maybe mark done if AI thinks so.
-                // For now, let's just ensure the text reflects the encouragement.
+                // Mark the roadmap phase as done or progress it
+                if (!isOffline && phaseId) {
+                    // We simply mark it as done for now to show progress, 
+                    // or ideally increment a progress bar if we had one.
+                    // For the "Tick this chunk" requirement:
+                    await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', phaseId), { 
+                        status: 'done'
+                    });
+                    
+                    // Also try to find the next one to set to in-progress
+                    const currentPhase = roadmap.find(r => r.id === phaseId);
+                    if (currentPhase) {
+                        const nextPhase = roadmap.find(r => r.order === currentPhase.order + 1);
+                        if (nextPhase) {
+                             await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', nextPhase.id), { 
+                                status: 'in-progress'
+                            });
+                        }
+                    }
+                }
              }
         }
 
