@@ -4,7 +4,7 @@ import {
   Calendar, Settings, User, Globe, ArrowRight, Sparkles, Send, 
   Plus, Trash2, Smile, Activity, Lightbulb, LogOut, Lock, Mail, 
   UserCircle, PenTool, ShieldCheck, Cloud, RefreshCw, Bell, 
-  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff
+  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff, Map, Target, Flag, Compass
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -124,6 +124,7 @@ const LANGUAGES = {
     chat: "Aura Guide",
     plan: "Smart Planner",
     journal: "Neuro Journal",
+    roadmap: "Big Goals",
     task_add: "Add Task",
     task_magic: "Magic Breakdown",
     submit: "Submit",
@@ -148,7 +149,10 @@ const LANGUAGES = {
     task_auto_updated: "Task updated:",
     offline_mode: "Offline",
     reconnect: "Retry",
-    connect_error: "Connection Issue"
+    connect_error: "Connection Issue",
+    roadmap_placeholder: "What is your Big Goal? (e.g., Master Cyber Security)",
+    generate_plan: "Visualize Roadmap",
+    roadmap_notes: "My Notes & Adjustments"
   },
   ar: {
     welcome: "مرحباً بك في سينترا",
@@ -169,6 +173,7 @@ const LANGUAGES = {
     chat: "المساعد (أورا)",
     plan: "المهام الذكية",
     journal: "المذكرات",
+    roadmap: "الأهداف الكبرى",
     task_add: "إضافة مهمة",
     task_magic: "تقسيم ذكي",
     submit: "تأكيد",
@@ -193,7 +198,10 @@ const LANGUAGES = {
     task_auto_updated: "تم تعديل:",
     offline_mode: "غير متصل",
     reconnect: "إعادة المحاولة",
-    connect_error: "مشكلة في الاتصال"
+    connect_error: "مشكلة في الاتصال",
+    roadmap_placeholder: "إيه هو هدفك الكبير؟ (مثلاً: احتراف الأمن السيبراني)",
+    generate_plan: "رسم خريطة الطريق",
+    roadmap_notes: "ملاحظاتي وتعديلاتي"
   }
 };
 
@@ -229,7 +237,7 @@ const FULL_SJT = [
     { id: 25, trait: 'O', text_en: "You have a completely free Saturday afternoon. What do you prefer to do?", text_ar: "عندك يوم سبت فاضي تماماً بعد الظهر. تفضل تعمل إيه؟", options_en: ["Go to a museum or read a complex novel.", "Watch a popular movie.", "Play the same video game I always play.", "Sleep or do nothing."], options_ar: ["أروح متحف أو أقرا رواية معقدة.", "أتفرج على فيلم مشهور.", "ألعب نفس الفيديو جيم اللي بلعبها دايماً.", "أنام أو معملش حاجة."] },
     { id: 26, trait: 'O', text_en: "A song comes on the radio in a language you don't understand, with a very unusual melody.", text_ar: "اشتغلت أغنية في الراديو بلغة مش فاهمها، ولحنها غريب جداً.", options_en: ["Listen carefully and search for the lyrics/translation later.", "Enjoy the beat but don't think about it.", "Change the station to pop music.", "Turn it off; it sounds like noise."], options_ar: ["أسمع بتركيز وأبحث عن الكلمات والترجمة بعدين.", "أستمتع بالإيقاع بس مفكرش فيها.", "أغير المحطة لأغاني بوب معروفة.", "أقفلها؛ دي دوشة."] },
     { id: 27, trait: 'O', text_en: "You win a free trip. You have to choose the destination.", text_ar: "كسبت رحلة مجانية. لازم تختار المكان.", options_en: ["A remote village in the mountains of Peru to explore.", "A guided tour of famous European cities.", "A luxury beach resort to relax.", "I'd rather sell the ticket and stay home."], options_ar: ["قرية معزولة في جبال بيرو عشان أستكشف.", "رحلة سياحية لمدن أوروبية مشهورة.", "منتجع سياحي فخم للاسترخاء.", "أبيع التذكرة وأقعد في البيت أحسن."] },
-    { id: 28, trait: 'O', text_en: "You encounter a difficult riddle that requires thinking outside the box.", text_ar: "قابلت لغز صعب محتاج تفكير بره الصندوق.", options_en: ["Spend hours enjoying the mental challenge.", "Try for a few minutes then give up.", "Google the answer immediately.", "Ignore it; I hate riddles."], options_ar: ["أقضي ساعات مستمتع بالتحدي الذهني ده.", "أحاول كام دقيقة وأيأس.", "أجيب الحل من جوجل فوراً.", "أطنش؛ بكره الألغاز."] },
+    { id: 28, trait: 'O', text_en: "You encounter a difficult riddle that requires thinking outside the box.", text_ar: "قابلت لغز صعب محتاج تفكير بره الصندوق.", options_en: ["Spend hours enjoying the mental challenge.", "Try for 10 minutes, then give up.", "Google the answer immediately.", "Ignore it; I hate riddles."], options_ar: ["أقضي ساعات مستمتع بالتحدي الذهني ده.", "أحاول كام دقيقة وأيأس.", "أجيب الحل من جوجل فوراً.", "أطنش؛ بكره الألغاز."] },
     { id: 29, trait: 'O', text_en: "How often do you find yourself daydreaming about impossible or fantasy worlds?", text_ar: "بتسرح بخيالك في عوالم خيالية أو مستحيلة قد إيه؟", options_en: ["Constantly; I live in my head.", "Often, when I am bored.", "Rarely; I focus on reality.", "Never; it's a waste of time."], options_ar: ["باستمرار؛ أنا عايش جوه دماغي.", "غالباً، لما بكون زهقان.", "نادراً؛ بركز في الواقع.", "أبداً؛ ده تضييع وقت."] },
     { id: 30, trait: 'O', text_en: "Your friend suggests changing your usual route walking home to explore a new street.", text_ar: "صاحبك اقترح تغيروا الطريق المعتاد وأنتوا مروحين عشان تشوفوا شارع جديد.", options_en: ["Yes! I love seeing new things.", "Sure, if it's not too long.", "No, let's stick to the usual way.", "No, I hate changing my routine."], options_ar: ["يلا! بحب أشوف حاجات جديدة.", "ماشي، لو مش طويل أوي.", "لأ، خلينا في الطريق المعتاد.", "لأ، بكره أغير روتيني."] },
     { id: 31, trait: 'O', text_en: "You are reading a book. Do you prefer:", text_ar: "بتقرأ كتاب. تفضل إيه؟", options_en: ["Science fiction or deep philosophy.", "Biographies of famous people.", "Action/Adventure.", "I don't like reading."], options_ar: ["خيال علمي أو فلسفة عميقة.", "سير ذاتية لمشاهير.", "أكشن ومغامرة.", "مبحبش القراءة."] },
@@ -600,6 +608,7 @@ const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline })
       <div className="w-24 bg-white rounded-[2.5rem] shadow-xl border border-slate-100 flex flex-col items-center py-8 gap-6 z-10">
         <NavIcon icon={<MessageCircle />} active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} />
         <NavIcon icon={<Calendar />} active={activeTab === 'plan'} onClick={() => setActiveTab('plan')} />
+        <NavIcon icon={<Map />} active={activeTab === 'roadmap'} onClick={() => setActiveTab('roadmap')} />
         <NavIcon icon={<BookOpen />} active={activeTab === 'journal'} onClick={() => setActiveTab('journal')} />
         
         <div className="mt-auto relative">
@@ -614,6 +623,7 @@ const Dashboard = ({ t, userId, profile, lang, appId, isOffline, setIsOffline })
       <div className="flex-1 bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden relative flex flex-col">
         {activeTab === 'chat' && <ChatModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
         {activeTab === 'plan' && <PlannerModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
+        {activeTab === 'roadmap' && <RoadmapModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
         {activeTab === 'journal' && <JournalModule t={t} userId={userId} lang={lang} profile={profile} appId={appId} isOffline={isOffline} />}
       </div>
 
@@ -649,6 +659,7 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentTasks, setCurrentTasks] = useState([]);
+  const [currentRoadmap, setCurrentRoadmap] = useState(null);
   const scrollRef = useRef(null);
 
   // Load Chat History
@@ -674,6 +685,16 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     return () => unsub();
   }, [userId, isOffline]);
 
+  // Fetch Roadmap for Context
+  useEffect(() => {
+    if(!userId || isOffline) return;
+    const docRef = doc(db, 'artifacts', appId, 'users', userId, 'data', 'roadmap');
+    const unsub = onSnapshot(docRef, (snap) => {
+        if (snap.exists()) setCurrentRoadmap(snap.data());
+    });
+    return () => unsub();
+  }, [userId, isOffline]);
+
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, loading]);
 
   const send = async () => {
@@ -694,23 +715,34 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     try {
         // 2. Prepare Context
         const taskListString = currentTasks.map(t => `- ${t.text} (ID: ${t.id})`).join('\n');
+        const roadmapContext = currentRoadmap 
+          ? `ACTIVE LONG-TERM GOAL: ${currentRoadmap.goal}\nROADMAP STEPS: ${currentRoadmap.steps.slice(0, 5).map(s => s.title_en).join(', ')}...`
+          : "No active long-term roadmap.";
         
-        // 3. Strict System Prompt for Egyptian Arabic
+        // 3. Strict System Prompt for Egyptian Arabic + New Persona
         const systemPrompt = `
-          IDENTITY: You are "Aura", a sophisticated AI mentor using the BIG-5 personality model.
+          IDENTITY: You are "Aura", a warm, highly supportive daily companion who acts like a caring mum or close positive friend. Your goal is to guide the user through daily life, studying, and personal progress in a natural, friendly, conversational way.
+          
           USER PROFILE: Name: ${profile.name}, Age: ${profile.age}, C:${profile.c_score}, O:${profile.o_score}.
-          CURRENT TASKS:
-          ${taskListString}
+          CURRENT TASKS: ${taskListString}
+          ${roadmapContext}
 
-          CRITICAL LANGUAGE INSTRUCTIONS:
+          BEHAVIOR:
+          - Start by gently asking about plans, priorities, mood.
+          - If user is quiet, ask simple guiding questions.
+          - Continuously monitor tasks, short-term goals, and emotional state.
+          - Check if study methods work by casually asking about focus/energy.
+          - Adapt guidance based on traits (High C = Structure, High O = Curiosity).
+          - CRITICAL: Use the user's roadmap context to "translate" their long-term plan into daily check-ins. Ask how far they went on specific roadmap steps.
+
+          LANGUAGE:
           - The user's interface language is: ${lang === 'ar' ? 'Arabic' : 'English'}.
           - IF 'ar': You MUST speak in EGYPTIAN ARABIC (Masri) slang. Be friendly, helpful, and sound like a cool mentor from Cairo. Do NOT use Modern Standard Arabic (Fusha).
-          - IF 'en': Speak in clear English.
+          - IF 'en': Speak in clear, warm English.
 
-          TOOLS & BEHAVIOR:
-          - If the user wants to add a task, strictly write on a new line: [ADD: task text]
-          - If the user wants to update a task, strictly write: [MOD: old_task_text -> new_task_text]
-          - Keep responses concise and encouraging.
+          TOOLS:
+          - To add a task: [ADD: task text]
+          - To update a task: [MOD: old_task_text -> new_task_text]
         `;
 
         // 4. Call AI
@@ -782,6 +814,233 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder={t.chat_placeholder} className="flex-1 bg-slate-100 rounded-2xl p-5 outline-none focus:ring-2 focus:ring-teal-500/20 text-lg" />
          <button onClick={send} disabled={loading} className="bg-teal-500 text-white p-5 rounded-2xl hover:bg-teal-600 disabled:opacity-50"><Send /></button>
        </div>
+    </div>
+  );
+};
+
+// --- ROADMAP MODULE (NEW) ---
+const RoadmapModule = ({ t, userId, lang, profile, appId, isOffline }) => {
+  const [roadmap, setRoadmap] = useState(null);
+  const [goalInput, setGoalInput] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [translate, setTranslate] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [selectedNode, setSelectedNode] = useState(null);
+
+  // Load Roadmap
+  useEffect(() => {
+    if(!userId || isOffline) return;
+    const docRef = doc(db, 'artifacts', appId, 'users', userId, 'data', 'roadmap');
+    const unsub = onSnapshot(docRef, (snap) => {
+        if (snap.exists()) {
+           const data = snap.data();
+           setRoadmap(data);
+           setNotes(data.notes || "");
+        }
+    });
+    return () => unsub();
+  }, [userId, isOffline]);
+
+  const createRoadmap = async () => {
+    if (!goalInput.trim()) return;
+    setGenerating(true);
+
+    const prompt = `
+      Create a detailed, step-by-step learning roadmap for: "${goalInput}".
+      User Context: High school student (Grade 11), limited time, Traits: C:${profile.c_score}, O:${profile.o_score}.
+      Requirements:
+      1. 20+ steps minimum.
+      2. Break into phases (Beginner, Intermediate, Advanced).
+      3. Include specific resources (names of books, websites, or topic search terms) for each step.
+      4. If the goal is too dangerous or unrealistic (e.g. "Become a doctor in 1 month", "Make a bomb"), return JSON with "error": "reason".
+      5. Return VALID JSON ONLY: { "title": "...", "steps": [ { "id": 1, "title_en": "...", "title_ar": "...", "desc_en": "...", "desc_ar": "...", "type": "main" (or "branch"), "resources": ["..."] } ] }
+    `;
+
+    try {
+      const resultRaw = await callGemini(prompt, "Return strictly valid JSON.");
+      const cleanJson = resultRaw.replace(/```json|```/g, "").trim();
+      const plan = JSON.parse(cleanJson);
+
+      if (plan.error) {
+        alert(plan.error); // Simple alert for error, ideal would be a modal
+        setGenerating(false);
+        return;
+      }
+
+      const newRoadmap = {
+        goal: goalInput,
+        title: plan.title,
+        steps: plan.steps.map(s => ({...s, status: 'locked'})), // init status
+        createdAt: serverTimestamp(),
+        notes: ""
+      };
+      
+      // Unlock first step
+      if (newRoadmap.steps.length > 0) newRoadmap.steps[0].status = 'active';
+
+      if (!isOffline) {
+        await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'data', 'roadmap'), newRoadmap);
+      } else {
+        setRoadmap(newRoadmap);
+      }
+    } catch (e) {
+      console.error("Roadmap Gen Error", e);
+      alert("Failed to generate plan. Try a simpler goal.");
+    }
+    setGenerating(false);
+  };
+
+  const saveNotes = async () => {
+    if (!roadmap || isOffline) return;
+    await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'data', 'roadmap'), { notes });
+  };
+
+  const toggleStep = async (stepId) => {
+    if (!roadmap || isOffline) return;
+    const newSteps = roadmap.steps.map(s => {
+       if (s.id === stepId) return { ...s, status: s.status === 'done' ? 'active' : 'done' };
+       return s;
+    });
+    // Check if next step should unlock
+    const clickedIndex = newSteps.findIndex(s => s.id === stepId);
+    if (newSteps[clickedIndex].status === 'done' && clickedIndex + 1 < newSteps.length) {
+        if (newSteps[clickedIndex+1].status === 'locked') newSteps[clickedIndex+1].status = 'active';
+    }
+
+    await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'data', 'roadmap'), { steps: newSteps });
+  };
+
+  if (!roadmap && !generating) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-10 bg-slate-50">
+        <div className="max-w-xl w-full text-center">
+           <div className="w-20 h-20 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-6 text-teal-600">
+             <Map size={40} />
+           </div>
+           <h2 className="text-3xl font-bold text-slate-800 mb-4">{t.roadmap}</h2>
+           <p className="text-slate-500 mb-8">Visualize your long-term dreams into a concrete 20-step plan tailored just for you.</p>
+           <div className="flex gap-2">
+             <input value={goalInput} onChange={e => setGoalInput(e.target.value)} placeholder={t.roadmap_placeholder} className="flex-1 p-4 rounded-xl border border-slate-200 shadow-sm outline-none focus:border-teal-500 transition-all" />
+             <button onClick={createRoadmap} disabled={!goalInput} className="bg-slate-900 text-white px-6 rounded-xl font-bold hover:bg-slate-800 transition-all disabled:opacity-50">{t.generate_plan}</button>
+           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (generating) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center">
+        <Compass className="animate-spin text-teal-600 mb-4" size={48} />
+        <p className="text-slate-500 font-medium animate-pulse">Designing your future path...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col relative bg-slate-50/50">
+      {/* Header */}
+      <div className="p-6 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm z-10">
+         <div>
+           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Flag className="text-teal-500" size={20}/> {roadmap.title}</h2>
+           <p className="text-xs text-slate-400 mt-1">{roadmap.steps.filter(s => s.status === 'done').length} / {roadmap.steps.length} Steps Completed</p>
+         </div>
+         <button onClick={() => setTranslate(!translate)} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all ${translate ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-600'}`}>
+           <Globe size={16}/> {translate ? "عربي" : "English"}
+         </button>
+      </div>
+
+      {/* Visualizer Canvas */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-10 relative">
+        <div className="max-w-3xl mx-auto relative min-h-[1000px]">
+           {/* Connecting Line */}
+           <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-slate-200 -translate-x-1/2 rounded-full"></div>
+           
+           {roadmap.steps.map((step, index) => {
+             const isLeft = index % 2 === 0;
+             const isDone = step.status === 'done';
+             const isActive = step.status === 'active';
+             const isLocked = step.status === 'locked';
+             
+             return (
+               <div key={step.id} className={`relative flex items-center justify-between mb-16 ${isLeft ? 'flex-row' : 'flex-row-reverse'}`}>
+                 {/* Content Box */}
+                 <div 
+                    onClick={() => !isLocked && setSelectedNode(step)}
+                    className={`w-[45%] p-5 rounded-2xl border-2 cursor-pointer transition-all duration-300 hover:scale-105 ${
+                    isDone ? 'bg-teal-50 border-teal-500 shadow-teal-100' : 
+                    isActive ? 'bg-white border-teal-400 shadow-xl shadow-teal-500/10 ring-4 ring-teal-50' : 
+                    'bg-slate-100 border-slate-200 opacity-70 grayscale'
+                 } shadow-md`}>
+                    <div className="flex justify-between items-start mb-2">
+                       <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${isDone ? 'bg-teal-200 text-teal-800' : 'bg-slate-200 text-slate-600'}`}>Step {index + 1}</span>
+                       {isActive && <span className="flex h-3 w-3 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-teal-500"></span></span>}
+                    </div>
+                    <h3 className={`font-bold text-lg mb-1 ${isDone ? 'text-teal-800' : 'text-slate-800'}`}>{translate && step.title_ar ? step.title_ar : step.title_en}</h3>
+                    <p className="text-sm text-slate-500 line-clamp-2">{translate && step.desc_ar ? step.desc_ar : step.desc_en}</p>
+                 </div>
+
+                 {/* Center Node */}
+                 <div className={`absolute left-1/2 -translate-x-1/2 w-8 h-8 rounded-full border-4 z-10 flex items-center justify-center bg-white transition-all ${
+                   isDone ? 'border-teal-500 bg-teal-500 text-white' : isActive ? 'border-teal-500' : 'border-slate-200'
+                 }`}>
+                   {isDone && <CheckCircle size={14} />}
+                 </div>
+
+                 {/* Spacer for alignment */}
+                 <div className="w-[45%]"></div>
+               </div>
+             );
+           })}
+           
+           {/* Finish Flag */}
+           <div className="flex justify-center pb-20">
+              <div className="bg-slate-900 text-white px-6 py-2 rounded-full font-bold flex items-center gap-2 shadow-lg hover:scale-110 transition-transform"><Flag size={18}/> Goal Reached</div>
+           </div>
+        </div>
+      </div>
+
+      {/* Footer Notes */}
+      <div className="bg-white border-t border-slate-200 p-4 z-20">
+         <div className="max-w-3xl mx-auto">
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t.roadmap_notes}</h4>
+            <div className="flex gap-2">
+               <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={saveNotes} placeholder="Add your personal modifications or extra resources here..." className="flex-1 bg-slate-50 border-slate-200 rounded-xl p-3 text-sm h-16 resize-none outline-none focus:border-teal-500 transition-all" />
+            </div>
+         </div>
+      </div>
+
+      {/* Detail Modal */}
+      {selectedNode && (
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-8 animate-in zoom-in-95">
+             <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-800">{translate ? selectedNode.title_ar : selectedNode.title_en}</h3>
+                  <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold ${selectedNode.status === 'done' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{selectedNode.status === 'done' ? 'Completed' : 'In Progress'}</span>
+                </div>
+                <button onClick={() => setSelectedNode(null)} className="p-2 hover:bg-slate-100 rounded-full"><X size={24}/></button>
+             </div>
+             
+             <p className="text-slate-600 leading-relaxed mb-6">{translate ? selectedNode.desc_ar : selectedNode.desc_en}</p>
+             
+             <div className="bg-slate-50 rounded-xl p-5 mb-6">
+               <h4 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><BookOpen size={16}/> Resources</h4>
+               <ul className="space-y-2">
+                 {selectedNode.resources?.map((r, i) => (
+                   <li key={i} className="text-sm text-teal-600 underline cursor-pointer hover:text-teal-800 truncate">{r}</li>
+                 ))}
+               </ul>
+             </div>
+
+             <div className="flex gap-4">
+               <button onClick={() => { toggleStep(selectedNode.id); setSelectedNode(null); }} className={`flex-1 py-3 rounded-xl font-bold text-white transition-all ${selectedNode.status === 'done' ? 'bg-slate-400' : 'bg-teal-600 hover:bg-teal-700'}`}>
+                 {selectedNode.status === 'done' ? 'Mark Incomplete' : 'Mark as Complete'}
+               </button>
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
