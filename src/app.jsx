@@ -22,10 +22,11 @@ import {
 
 // --- CONFIGURATION ---
 
-// 1. API KEY SETUP (Robust Fallback)
-// The platform injects the key into 'apiKey'. If it fails (empty), we use the backup.
-const apiKey = ""; 
-const backupKey = "AIzaSyCpJ2DVSaQaT84_cQlGIOev7tCSiqkNR1U"; 
+// 1. API KEY SETUP (Vercel / Vite Compatible)
+// We look for the environment variable VITE_GEMINI_API_KEY first.
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY || ""; 
+// Keep a backup only for local testing if strictly necessary, but avoid committing real keys.
+const backupKey = ""; 
 
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
@@ -62,10 +63,15 @@ const getHybridUserId = (email) => {
 
 // --- GEMINI API HELPER ---
 const callGemini = async (prompt, systemInstruction = "") => {
-  // Use the injected key, or fall back to the hardcoded one if environment injection fails
   const effectiveKey = apiKey || backupKey;
   
-  const models = ["gemini-1.5-flash", "gemini-2.5-flash-preview-09-2025", "gemini-pro"];
+  if (!effectiveKey) {
+    console.error("No API Key found. Please set VITE_GEMINI_API_KEY in your environment.");
+    return "Error: API Key is missing. Please check Vercel settings.";
+  }
+  
+  // Use 'gemini-1.5-flash' as the primary model for better stability
+  const models = ["gemini-1.5-flash", "gemini-pro"];
 
   for (const model of models) {
     try {
@@ -260,7 +266,7 @@ const FULL_SJT = [
     { id: 31, trait: 'O', text_en: "You are reading a book. Do you prefer:", text_ar: "بتقرأ كتاب. تفضل إيه؟", options_en: ["Science fiction or deep philosophy.", "Biographies of famous people.", "Action/Adventure.", "I don't like reading."], options_ar: ["خيال علمي أو فلسفة عميقة.", "سير ذاتية لمشاهير.", "أكشن ومغامرة.", "مبحبش القراءة."] },
     { id: 32, trait: 'O', text_en: "Someone suggests watching a documentary about the origin of the universe.", text_ar: "حد اقترح تتفرجوا على وثائقي عن نشأة الكون.", options_en: ["Sounds fascinating, let's watch.", "Okay, I'll watch it.", "Sounds boring.", "I'd rather watch a comedy."], options_ar: ["شكلها مذهلة، يلا نتفرج.", "ماشي، هتفرج.", "شكلها مملة.", "أفضل أتفرج على كوميدي."] },
     { id: 33, trait: 'O', text_en: "You have to write an essay. The teacher gives you a choice of topics.", text_ar: "لازم تكتب مقال. المدرس خيرك بين موضوعين.", options_en: ["'What if humans could fly?' (Creative)", "'My Summer Vacation' (Factual)", "Ask the teacher for an easier topic.", "Copy something from the internet."], options_ar: ["'ماذا لو البشر بيطيروا؟' (إبداعي)", "'أجازتي الصيفية' (واقعي)", "أطلب موضوع أسهل.", "أنقل حاجة من النت."] },
-    { id: 34, trait: 'O', text_en: "You see a device you've never seen before.", text_ar: "شفت جهاز عمرك ما شفته قبل كده.", options_en: ["Try to figure out how it works and take it apart if possible.", "Read the manual.", "Ask someone what it does.", "Ignore it."], options_ar: ["أحاول أفهم بيشتغل ازاي وأفكه لو ينفع.", "أقرا الكتالوج.", "أسأل حد ده بيعمل إيه.", "أطنشه."] },
+    { id: 34, trait: 'O', text_en: "You see a device you've never seen before.", text_ar: "شفت جهاز عمرك ما شفته قبل كده.", options_en: ["Try to figure out how it works and take it apart if possible.", "Read the manual.", "Ask someone what it does.", "Ignore it."], options_ar: ["أحاول أفهم بيشتغل ازاي وأفكه لو ينفع.", "أقرا الكتالوج.", "أسأل حد ده بيعمل إيه.", "أطنشها."] },
     { id: 35, trait: 'O', text_en: "Do you enjoy discussions about theoretical problems that have no correct answer?", text_ar: "بتستمتع بالمناقشات عن مشاكل نظرية ملهاش حل صح؟", options_en: ["Love them; they stimulate my mind.", "They are okay sometimes.", "No, I prefer practical problems.", "Hate them; they are pointless."], options_ar: ["بحبها جداً؛ بتشغل مخي.", "ماشي حالها ساعات.", "لأ، بفضل المشاكل العملية.", "بكرهها؛ ملهاش فايدة."] },
     { id: 36, trait: 'O', text_en: "A friend invites you to a poetry slam (people reading poems).", text_ar: "صاحبك عزمك على أمسية شعرية.", options_en: ["Go enthusiastically to hear the metaphors.", "Go just to hang out with the friend.", "Politely decline.", "Laugh at the idea."], options_ar: ["أروح بحماس عشان أسمع التشبيهات.", "أروح بس عشان أخرج مع صاحبي.", "أرفض بذوق.", "أضحك على الفكرة."] },
     { id: 37, trait: 'O', text_en: "When you are in nature, do you stop to look at details like shapes of leaves?", text_ar: "لما بتكون في الطبيعة، بتقف تتأمل تفاصيل زي شكل ورق الشجر؟", options_en: ["Yes, I often find beauty in small details.", "Sometimes.", "Rarely, I just walk.", "Never."], options_ar: ["آه، غالباً بلاقي جمال في التفاصيل الصغيرة.", "أحياناً.", "نادراً، بمشي وخلاص.", "أبداً."] },
