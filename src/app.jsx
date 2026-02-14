@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Smile, Activity, Lightbulb, LogOut, Lock, Mail, 
   UserCircle, PenTool, ShieldCheck, Cloud, RefreshCw, Bell, 
   Menu, X, Edit3, AlertTriangle, Wifi, WifiOff, Map, Flag, Target,
-  CheckSquare, ArrowDown
+  CheckSquare, ArrowDown, ExternalLink, Save
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -17,7 +17,7 @@ import {
   getFirestore, collection, addDoc, query, onSnapshot, 
   serverTimestamp, doc, setDoc, getDoc, deleteDoc, updateDoc, 
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  orderBy, limit
+  orderBy, limit, writeBatch
 } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
@@ -146,11 +146,16 @@ const LANGUAGES = {
     connect_error: "Connection Issue",
     roadmap_goal_placeholder: "What is your big ambition? (e.g., Become a Cyber Security Expert)",
     generate_roadmap: "Generate Life Map",
-    roadmap_loading: "Analyzing feasibility & constructing path...",
+    roadmap_loading: "Analyzing feasibility & constructing path (this may take a moment)...",
     current_phase: "Current Phase",
     mark_done: "Mark Complete",
     roadmap_limit_error: "Goal Feasibility Warning: Based on your current profile and load, this goal might be too overwhelming.",
-    roadmap_reset: "Reset Roadmap"
+    roadmap_reset: "Reset Roadmap",
+    translate_plan: "Translate Plan",
+    translating: "Translating...",
+    roadmap_notes_label: "Personal Notes & Adjustments",
+    roadmap_notes_placeholder: "Add your own branches, extra resources, or modifications to the plan here...",
+    save_notes: "Save Notes"
   },
   ar: {
     welcome: "مرحباً بك في سينترا",
@@ -199,11 +204,16 @@ const LANGUAGES = {
     connect_error: "مشكلة في الاتصال",
     roadmap_goal_placeholder: "إيه حلمك الكبير؟ (مثلاً: أبقى خبير أمن سيبراني)",
     generate_roadmap: "بناء الخارطة",
-    roadmap_loading: "جاري دراسة الجدوى وبناء المسار...",
+    roadmap_loading: "جاري دراسة الجدوى وبناء المسار (ممكن ياخد وقت شوية)...",
     current_phase: "المرحلة الحالية",
     mark_done: "تم الإنجاز",
     roadmap_limit_error: "تنبيه جدوى: بناءً على ملفك الحالي، الهدف ده ممكن يكون ضغط زيادة عليك.",
-    roadmap_reset: "حذف الخارطة"
+    roadmap_reset: "حذف الخارطة",
+    translate_plan: "ترجمة الخطة",
+    translating: "جاري الترجمة...",
+    roadmap_notes_label: "ملاحظات وتعديلات شخصية",
+    roadmap_notes_placeholder: "اكتب هنا أي فروع زيادة، مصادر خارجية، أو تعديلات عايز تضيفها للخطة...",
+    save_notes: "حفظ الملاحظات"
   }
 };
 
@@ -823,7 +833,11 @@ const RoadmapModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const [phases, setPhases] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [notes, setNotes] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [notesSaving, setNotesSaving] = useState(false);
 
+  // Load Roadmap Phases
   useEffect(() => {
     if (!userId || isOffline) return;
     const q = query(collection(db, 'artifacts', appId, 'users', userId, 'roadmap'), orderBy("order"));
@@ -832,6 +846,24 @@ const RoadmapModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     }, (err) => console.log("Roadmap Offline", err));
     return () => unsub();
   }, [userId, isOffline]);
+
+  // Load Personal Notes
+  useEffect(() => {
+    if (!userId || isOffline) return;
+    const loadNotes = async () => {
+        const docRef = doc(db, 'artifacts', appId, 'users', userId, 'data', 'roadmap_notes');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) setNotes(snap.data().text || '');
+    };
+    loadNotes();
+  }, [userId, isOffline]);
+
+  const saveNotes = async () => {
+     if (isOffline || !userId) return;
+     setNotesSaving(true);
+     await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'data', 'roadmap_notes'), { text: notes }, { merge: true });
+     setNotesSaving(false);
+  };
 
   const generateRoadmap = async () => {
     if (!goal.trim()) return;
@@ -846,10 +878,18 @@ const RoadmapModule = ({ t, userId, lang, profile, appId, isOffline }) => {
       
       TASK: 
       1. Assess FEASIBILITY. If the user is too young (e.g. < 12 wanting to be a neurosurgeon now) or the goal is impossible, return JSON with "error".
-      2. If feasible, create a Roadmap (Flowchart) with 4-6 distinct phases.
-      3. Return ONLY valid JSON array: 
+      2. If feasible, create a comprehensive, detailed Roadmap with 15-20 distinct steps/phases.
+      3. The roadmap must be WIDE and detailed. Include specific learning resources (book titles, course names, tools) for each step.
+      
+      RETURN ONLY valid JSON array: 
       [
-        { "title": "Phase Name", "description": "Short details", "duration": "e.g. 2 months", "type": "milestone" } 
+        { 
+          "title": "Step Title", 
+          "description": "Detailed description of what to learn/do.", 
+          "duration": "e.g. 2 weeks", 
+          "type": "learning/practice/milestone",
+          "resources": ["Book Name", "Course Name", "Tool Name"]
+        } 
       ]
       OR { "error": "Reason why this goal exceeds limitations currently." }
     `;
@@ -869,6 +909,10 @@ const RoadmapModule = ({ t, userId, lang, profile, appId, isOffline }) => {
 
       // Delete existing
       if (!isOffline) {
+        // Batch delete old phases
+        const q = query(collection(db, 'artifacts', appId, 'users', userId, 'roadmap'));
+        const snap = await getFirestore(app) // Helper to get snapshot for batch delete if needed, or iterate
+        // Ideally use batch, but for simplicity:
         phases.forEach(async (p) => {
            await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', p.id));
         });
@@ -894,6 +938,49 @@ const RoadmapModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     }
   };
 
+  const translateRoadmap = async () => {
+    if (phases.length === 0 || isOffline) return;
+    setIsTranslating(true);
+    
+    // Construct prompt with current content
+    const content = JSON.stringify(phases.map(p => ({
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        duration: p.duration,
+        resources: p.resources || []
+    })));
+
+    const targetLang = lang === 'ar' ? 'Arabic' : 'English';
+    const prompt = `Translate the following JSON array of roadmap steps into ${targetLang}. Keep the ID unchanged. Return ONLY JSON array. \n\n${content}`;
+
+    try {
+        const resRaw = await callGemini(prompt);
+        const jsonStr = resRaw.match(/\[.*\]/s)?.[0];
+        if (!jsonStr) throw new Error("Translation Parse Error");
+        
+        const translated = JSON.parse(jsonStr);
+        
+        // Batch update
+        const batch = writeBatch(db);
+        translated.forEach(item => {
+            const ref = doc(db, 'artifacts', appId, 'users', userId, 'roadmap', item.id);
+            batch.update(ref, {
+                title: item.title,
+                description: item.description,
+                duration: item.duration,
+                resources: item.resources
+            });
+        });
+        await batch.commit();
+
+    } catch (e) {
+        console.error("Translation failed", e);
+    } finally {
+        setIsTranslating(false);
+    }
+  };
+
   const markPhaseDone = async (phase) => {
      if (isOffline) return;
      await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', phase.id), { status: 'done' });
@@ -911,13 +998,15 @@ const RoadmapModule = ({ t, userId, lang, profile, appId, isOffline }) => {
         await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'roadmap', p.id));
      });
     setGoal('');
+    setNotes('');
+    await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'data', 'roadmap_notes'), { text: '' });
   };
 
   return (
     <div className="h-full flex flex-col bg-slate-50/30 overflow-hidden relative">
       {phases.length === 0 ? (
          // --- EMPTY STATE / INPUT ---
-         <div className="flex-1 flex flex-col items-center justify-center p-10 animate-in fade-in zoom-in duration-500">
+         <div className="flex-1 flex flex-col items-center justify-center p-10 animate-in fade-in zoom-in duration-500 overflow-y-auto">
              <div className="w-20 h-20 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-teal-500/20">
                <Target size={40} />
              </div>
@@ -951,62 +1040,103 @@ const RoadmapModule = ({ t, userId, lang, profile, appId, isOffline }) => {
       ) : (
         // --- VISUALIZATION ---
         <div className="flex-1 flex flex-col relative h-full">
-           <div className="p-6 border-b border-slate-100 bg-white/50 backdrop-blur-sm flex justify-between items-center z-10">
+           <div className="p-4 md:p-6 border-b border-slate-100 bg-white/50 backdrop-blur-sm flex justify-between items-center z-10 sticky top-0">
               <div>
-                <h3 className="text-xl font-bold text-slate-800">{goal || "My Journey"}</h3>
-                <p className="text-sm text-slate-400">{phases.filter(p => p.status === 'done').length} / {phases.length} Phases Complete</p>
+                <h3 className="text-lg md:text-xl font-bold text-slate-800 line-clamp-1">{goal || "My Journey"}</h3>
+                <p className="text-xs md:text-sm text-slate-400">{phases.filter(p => p.status === 'done').length} / {phases.length} Steps</p>
               </div>
-              <button onClick={clearMap} className="text-xs text-red-400 hover:text-red-600 font-bold border border-red-100 px-3 py-1 rounded-lg hover:bg-red-50">{t.roadmap_reset}</button>
+              <div className="flex gap-2">
+                 <button onClick={translateRoadmap} disabled={isTranslating} className="text-xs md:text-sm text-blue-600 bg-blue-50 hover:bg-blue-100 font-bold px-3 py-2 rounded-lg flex items-center gap-2 transition-all">
+                    {isTranslating ? <RefreshCw className="animate-spin" size={14}/> : <Globe size={14} />} {isTranslating ? t.translating : t.translate_plan}
+                 </button>
+                 <button onClick={clearMap} className="text-xs md:text-sm text-red-400 hover:text-red-600 font-bold border border-red-100 px-3 py-2 rounded-lg hover:bg-red-50">{t.roadmap_reset}</button>
+              </div>
            </div>
            
-           <div className="flex-1 overflow-y-auto p-10 relative">
+           <div className="flex-1 overflow-y-auto p-4 md:p-10 relative">
               {/* Central Line */}
-              <div className="absolute left-[50%] top-10 bottom-10 w-1 bg-slate-200 -ml-0.5 rounded-full hidden md:block"></div>
+              <div className="absolute left-[20px] md:left-[50%] top-10 bottom-10 w-1 bg-slate-200 -ml-0.5 rounded-full"></div>
               
-              <div className="max-w-3xl mx-auto space-y-0 relative">
+              <div className="max-w-4xl mx-auto space-y-0 relative">
                  {phases.map((phase, idx) => (
-                   <div key={phase.id} className={`relative flex items-center mb-12 group ${idx % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'} flex-col`}>
+                   <div key={phase.id} className={`relative flex items-center mb-8 md:mb-12 group md:flex-row flex-row ${idx % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'}`}>
                       
-                      {/* Node Circle */}
-                      <div className={`absolute left-1/2 -translate-x-1/2 w-8 h-8 rounded-full border-4 z-10 hidden md:flex items-center justify-center bg-white transition-all duration-500
-                         ${phase.status === 'done' ? 'border-teal-500' : phase.status === 'in-progress' ? 'border-amber-400 scale-125' : 'border-slate-200'}`}>
+                      {/* Node Circle (Desktop & Mobile Unified Logic for Line) */}
+                      <div className={`absolute left-[20px] md:left-1/2 -translate-x-1/2 w-8 h-8 rounded-full border-4 z-10 flex items-center justify-center bg-white transition-all duration-500
+                         ${phase.status === 'done' ? 'border-teal-500' : phase.status === 'in-progress' ? 'border-amber-400 scale-110' : 'border-slate-200'}`}>
                          {phase.status === 'done' && <div className="w-2 h-2 bg-teal-500 rounded-full"></div>}
+                         <span className="md:hidden absolute -left-6 text-xs font-bold text-slate-300 w-4 text-right">{idx+1}</span>
                       </div>
 
+                      {/* Spacer for desktop alternation */}
+                      <div className="hidden md:block w-1/2"></div>
+
                       {/* Content Card */}
-                      <div className={`w-full md:w-[45%] p-6 rounded-3xl border transition-all duration-300 relative overflow-hidden group-hover:shadow-lg
+                      <div className={`w-[calc(100%-50px)] ml-[50px] md:ml-0 md:w-[45%] p-5 md:p-6 rounded-3xl border transition-all duration-300 relative overflow-hidden group-hover:shadow-lg
                          ${phase.status === 'in-progress' ? 'bg-white border-amber-200 shadow-md ring-4 ring-amber-500/5' : 
-                           phase.status === 'done' ? 'bg-slate-50 border-teal-200 opacity-75' : 'bg-white border-slate-100'}`}>
+                           phase.status === 'done' ? 'bg-slate-50 border-teal-200 opacity-75' : 'bg-white border-slate-100'}
+                         ${idx % 2 === 0 ? 'md:mr-auto md:ml-8' : 'md:ml-auto md:mr-8'}
+                       `}>
                          
                          {phase.status === 'in-progress' && <div className="absolute top-0 left-0 w-1 h-full bg-amber-400"></div>}
                          {phase.status === 'done' && <div className="absolute top-0 right-0 p-2"><CheckCircle className="text-teal-500" size={20}/></div>}
 
-                         <span className={`text-xs font-bold tracking-widest uppercase mb-2 block ${phase.status === 'in-progress' ? 'text-amber-500' : 'text-slate-400'}`}>
-                            {phase.status === 'in-progress' ? t.current_phase : `Phase 0${idx+1}`}
-                         </span>
+                         <div className="flex justify-between items-start mb-2">
+                            <span className={`text-xs font-bold tracking-widest uppercase block ${phase.status === 'in-progress' ? 'text-amber-500' : 'text-slate-400'}`}>
+                                {phase.status === 'in-progress' ? t.current_phase : `Step 0${idx+1}`}
+                            </span>
+                            <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">{phase.duration}</span>
+                         </div>
                          
-                         <h4 className="text-xl font-bold text-slate-800 mb-2">{phase.title}</h4>
+                         <h4 className="text-lg md:text-xl font-bold text-slate-800 mb-2">{phase.title}</h4>
                          <p className="text-slate-500 text-sm leading-relaxed mb-4">{phase.description}</p>
                          
-                         <div className="flex justify-between items-center pt-4 border-t border-slate-50">
-                            <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">{phase.duration}</span>
-                            {phase.status === 'in-progress' && (
-                               <button onClick={() => markPhaseDone(phase)} className="text-xs font-bold text-white bg-slate-900 px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-1">
-                                 {t.mark_done} <CheckSquare size={12} />
+                         {/* Resources Section */}
+                         {phase.resources && phase.resources.length > 0 && (
+                             <div className="mb-4 flex flex-wrap gap-2">
+                                 {phase.resources.map((res, i) => (
+                                     <span key={i} className="text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-full flex items-center gap-1">
+                                         <ExternalLink size={10} /> {res}
+                                     </span>
+                                 ))}
+                             </div>
+                         )}
+                         
+                         {phase.status === 'in-progress' && (
+                             <div className="pt-4 border-t border-slate-50 flex justify-end">
+                               <button onClick={() => markPhaseDone(phase)} className="text-xs font-bold text-white bg-slate-900 px-4 py-2 rounded-xl hover:bg-slate-800 transition-colors flex items-center gap-2">
+                                 {t.mark_done} <CheckSquare size={14} />
                                </button>
-                            )}
-                         </div>
+                             </div>
+                         )}
                       </div>
-                      
-                      {/* Mobile Line Connector (Hidden on Desktop) */}
-                      <div className="md:hidden absolute left-4 top-full h-12 w-0.5 bg-slate-200"></div>
                    </div>
                  ))}
                  
                  {/* Finish Flag */}
-                 <div className="flex justify-center mt-8 relative z-10">
-                    <div className="w-12 h-12 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-xl">
+                 <div className="flex justify-start md:justify-center pl-[2px] md:pl-0 mt-8 relative z-10 mb-12">
+                    <div className="w-12 h-12 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-xl border-4 border-white">
                       <Flag />
+                    </div>
+                 </div>
+
+                 {/* Editable Notes Section */}
+                 <div className="mt-12 pt-8 border-t border-slate-200">
+                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                <Edit3 size={18} className="text-teal-500"/> {t.roadmap_notes_label}
+                            </h4>
+                            <button onClick={saveNotes} disabled={notesSaving} className="text-sm bg-teal-50 text-teal-600 px-3 py-1 rounded-lg font-bold hover:bg-teal-100 transition-colors flex items-center gap-2">
+                                {notesSaving ? <RefreshCw className="animate-spin" size={14}/> : <Save size={14}/>} {t.save_notes}
+                            </button>
+                        </div>
+                        <textarea 
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            className="w-full h-40 p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none focus:border-teal-500 transition-all text-slate-700 resize-none"
+                            placeholder={t.roadmap_notes_placeholder}
+                        />
                     </div>
                  </div>
               </div>
