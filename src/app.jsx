@@ -22,7 +22,7 @@ import {
 
 // 1. GEMINI API KEY
 // Explicitly using your provided key to ensure connection works
-const apiKey = process.env.GEMINI_API_KEY; 
+const apiKey = "AIzaSyDIFVDCzuYoBG0ePSTesS3_gHGlG-3t6GM"; 
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
