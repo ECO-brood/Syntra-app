@@ -673,6 +673,7 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const [currentTasks, setCurrentTasks] = useState([]);
   const [roadmap, setRoadmap] = useState([]);
   const scrollRef = useRef(null);
+  const hasInitialized = useRef(false);
 
   // Load Chat History
   useEffect(() => {
@@ -707,6 +708,28 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     return () => unsub();
   }, [userId, isOffline]);
 
+  // Auto-initiate conversation if empty
+  useEffect(() => {
+     if (msgs.length === 0 && !loading && !hasInitialized.current && userId) {
+         hasInitialized.current = true;
+         // Simulate Aura starting the convo
+         const startMsg = lang === 'ar' 
+            ? `أهلاً يا ${profile.name}! 🌟 يومك عامل إيه النهاردة؟ ناوي على إيه؟` 
+            : `Hey ${profile.name}! 🌟 How's your day going? What's on your mind for today?`;
+         
+         // Only add locally first or save to db
+         // We'll just call send with a hidden prompt to trigger the AI to start properly
+         // But for simplicity, let's just wait for user. Or better, add a system welcome msg.
+         // Actually, let's do nothing and let the user start, OR add a "welcome" message from AI
+         const initChat = async () => {
+             await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
+                role: 'ai', text: startMsg, createdAt: serverTimestamp()
+             });
+         };
+         initChat();
+     }
+  }, [msgs.length, userId]);
+
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, loading]);
 
   const send = async () => {
@@ -715,7 +738,7 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     setInput('');
     setLoading(true);
 
-    // 1. Optimistic Update (Show user msg immediately)
+    // 1. Optimistic Update
     if (!isOffline) {
         await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
             role: 'user', text, createdAt: serverTimestamp()
@@ -725,64 +748,107 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
     }
 
     try {
-        // 2. Prepare Context
-        const taskListString = currentTasks.map(t => `- ${t.text} (ID: ${t.id})`).join('\n');
+        // 2. Prepare Detailed Context
+        const taskListString = currentTasks.map(t => `- [ID:${t.id}] ${t.text} (Done: ${t.done})`).join('\n');
         
-        // Prepare Roadmap Context (Current Phase)
         const activePhase = roadmap.find(r => r.status === 'in-progress') || roadmap.find(r => r.status === 'pending');
         const roadmapContext = activePhase 
-           ? `CURRENT ROADMAP PHASE: ${activePhase.title} (Status: ${activePhase.status}). Description: ${activePhase.description}.`
+           ? `CURRENT ROADMAP PHASE [ID:${activePhase.id}]: ${activePhase.title} (Status: ${activePhase.status}). Desc: ${activePhase.description}.`
            : "NO ACTIVE ROADMAP.";
 
-        // 3. Strict System Prompt for Egyptian Arabic + Roadmap Integration
+        // 3. Trait Analysis & Strategy
+        const cType = profile.c_score >= 50 ? 'HIGH_C' : 'LOW_C';
+        const oType = profile.o_score >= 50 ? 'HIGH_O' : 'LOW_O';
+        
+        let strategy = "";
+        if (cType === 'HIGH_C') {
+            strategy += "TRAIT C (High): Needs visible results/clear goals. Provide structured plans, detailed steps, and progress summaries. Be the 'Manager Mom'. ";
+        } else {
+            strategy += "TRAIT C (Low): Needs short-term wins/external push. HIDE the 'big plan'. Give small, immediate chunks. Gamify it. Be the 'Energetic Bestie'. ";
+        }
+
+        if (oType === 'HIGH_O') {
+            strategy += "TRAIT O (High): Motivated by concepts/curiosity. Ask 'Why?'. Connect ideas. Avoid repetition. Focus on the 'Big Picture'. ";
+        } else {
+            strategy += "TRAIT O (Low): Motivated by practical examples/steps. Needs clear instructions, repetition, exam focus. Avoid deep theory. Focus on 'How-To'. ";
+        }
+
+        // 4. Advanced System Prompt
         const systemPrompt = `
-          IDENTITY: You are "Aura", a sophisticated AI mentor using the BIG-5 personality model.
-          USER PROFILE: Name: ${profile.name}, Age: ${profile.age}, C:${profile.c_score}, O:${profile.o_score}.
+          IDENTITY: You are "Aura", the user's close, supportive friend (or cool mom). You are positive, warm, and observant.
+          USER: ${profile.name}, Age ${profile.age}. Traits: C=${profile.c_score}, O=${profile.o_score}.
+          LANGUAGE: ${lang === 'ar' ? 'Egyptian Arabic (Masri Slang ONLY)' : 'English'}.
           
+          YOUR STRATEGY (${cType} + ${oType}):
+          ${strategy}
+
           CONTEXT:
-          TASKS:
+          DAILY TASKS:
           ${taskListString}
           
+          LONG TERM:
           ${roadmapContext}
 
-          CRITICAL INSTRUCTIONS:
-          - Language: ${lang === 'ar' ? 'Egyptian Arabic (Masri)' : 'English'}.
-          - ROLE: Translate the long-term roadmap into daily advice. If a roadmap phase exists, ask about their progress on it or suggest a small daily step related to it.
-          - TOOLS:
-            - Write [ADD: task text] to add a task.
-            - Write [MOD: old -> new] to update a task.
-          - Tone: Friendly, concise, motivating.
+          GOAL:
+          1. DIAGNOSE: If they haven't shared their plan, ask friendly questions to extract it.
+          2. GUIDE: Break down their goals into tasks based on their STRATEGY (Structured for High C, Hidden/Small for Low C).
+          3. CHECK: Ask about progress on specific tasks. 
+          4. CONNECT: Relate daily tasks to the Long Term Roadmap.
+
+          TOOLS (Output these commands on a new line if needed):
+          - [ADD: task text] -> Adds a daily task.
+          - [MARK_DONE: task_id] -> Marks a daily task as complete.
+          - [ROADMAP_CHECK: phase_id] -> Updates progress on the long-term roadmap phase.
+          
+          TONE:
+          - Friendly, casual, encouraging. 
+          - Don't lecture. Chat like a human.
         `;
 
-        // 4. Call AI
+        // 5. Call AI
         const aiRaw = await callGemini(text, systemPrompt);
         let aiText = aiRaw;
         
-        // 5. Parse Commands (ADD/MOD)
-        const modMatch = aiRaw.match(/\[MOD:\s*(.*?)\s*->\s*(.*?)\]/);
-        if (modMatch) {
-            const oldText = modMatch[1].trim();
-            const newText = modMatch[2].trim();
-            aiText = aiRaw.replace(/\[MOD:.*?\]/, "").trim(); 
-            const targetTask = currentTasks.find(t => t.text.includes(oldText));
-            if (targetTask && !isOffline) {
-               await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'tasks', targetTask.id), { text: newText });
-               aiText += `\n(✓ ${t.task_auto_updated} ${newText})`;
-            }
-        }
-
-        const addMatch = aiRaw.match(/\[ADD:\s*(.*?)\]/);
+        // 6. Parse Commands
+        // Handle ADD
+        const addMatch = aiRaw.match(/\[ADD:\s*(.*?)\]/g);
         if (addMatch) {
-            const newText = addMatch[1].trim();
-            aiText = aiRaw.replace(/\[ADD:.*?\]/, "").trim();
-            const isDuplicate = currentTasks.some(t => t.text.toLowerCase() === newText.toLowerCase());
-            if (!isDuplicate && !isOffline) {
-               await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), { text: newText, done: false, type: 'ai-smart', createdAt: serverTimestamp() });
-               aiText += `\n(✓ ${t.task_auto_added} ${newText})`;
+            for (const match of addMatch) {
+                const newText = match.replace(/\[ADD:\s*|\]/g, "").trim();
+                aiText = aiText.replace(match, "").trim();
+                const isDuplicate = currentTasks.some(t => t.text.toLowerCase() === newText.toLowerCase());
+                if (!isDuplicate && !isOffline) {
+                    await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'tasks'), { 
+                        text: newText, done: false, type: 'ai-smart', createdAt: serverTimestamp() 
+                    });
+                }
             }
         }
 
-        // 6. Save Response
+        // Handle MARK_DONE
+        const doneMatch = aiRaw.match(/\[MARK_DONE:\s*(.*?)\]/g);
+        if (doneMatch) {
+            for (const match of doneMatch) {
+                const taskId = match.replace(/\[MARK_DONE:\s*|\]/g, "").trim();
+                aiText = aiText.replace(match, "").trim();
+                if (!isOffline) {
+                    await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'tasks', taskId), { done: true });
+                }
+            }
+        }
+
+        // Handle ROADMAP_CHECK (Simulated progress tick)
+        const roadMatch = aiRaw.match(/\[ROADMAP_CHECK:\s*(.*?)\]/g);
+        if (roadMatch) {
+             for (const match of roadMatch) {
+                aiText = aiText.replace(match, "").trim();
+                // In a real app, we might increment a percentage. 
+                // Here we just ack internally or maybe mark done if AI thinks so.
+                // For now, let's just ensure the text reflects the encouragement.
+             }
+        }
+
+        // 7. Save Response
         if (!isOffline) {
             await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
                 role: 'ai', text: aiText, createdAt: serverTimestamp()
@@ -792,15 +858,13 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
         }
 
     } catch (e) {
-        // Show error message in chat if AI fails
-        const errMsg = e.message || (lang === 'ar' ? "معلش في مشكلة في الاتصال، حاول تاني." : "Connection failed. Please check internet.");
-        
+        const errMsg = e.message || (lang === 'ar' ? "معلش النت فصل، ثانية وراجعلك." : "Connection blip. One sec.");
         if (!isOffline) {
             await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'chat'), {
-                role: 'ai', text: `⚠️ Error: ${errMsg}`, createdAt: serverTimestamp()
+                role: 'ai', text: `⚠️ ${errMsg}`, createdAt: serverTimestamp()
             });
         } else {
-            setMsgs(prev => [...prev, {id: Date.now()+2, role: 'ai', text: `⚠️ Error: ${errMsg}`}]);
+            setMsgs(prev => [...prev, {id: Date.now()+2, role: 'ai', text: `⚠️ ${errMsg}`}]);
         }
     }
     
@@ -813,15 +877,17 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
          {msgs.length === 0 && <div className="text-center text-slate-400 mt-20 opacity-50">{t.chat_placeholder}</div>}
          {msgs.map((m) => (
             <div key={m.id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
-              <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'} ${m.text.includes('⚠️') ? 'bg-red-50 text-red-600 border-red-200' : ''}`}>{m.text}</div>
+              <div className={`max-w-[85%] p-6 rounded-3xl text-lg shadow-sm leading-relaxed ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'} ${m.text.includes('⚠️') ? 'bg-red-50 text-red-600 border-red-200' : ''}`}>
+                  {m.text}
+              </div>
             </div>
           ))}
-          {loading && <div className="flex justify-start"><div className="bg-white p-4 rounded-3xl text-slate-400 italic text-sm"><Sparkles size={14} className="animate-spin inline mr-2"/>Aura thinking...</div></div>}
+          {loading && <div className="flex justify-start"><div className="bg-white p-4 rounded-3xl text-slate-400 italic text-sm border border-slate-100"><Sparkles size={14} className="animate-spin inline mr-2"/>Aura thinking...</div></div>}
           <div ref={scrollRef} />
        </div>
        <div className="p-6 bg-white border-t border-slate-100 flex gap-4">
-         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder={t.chat_placeholder} className="flex-1 bg-slate-100 rounded-2xl p-5 outline-none focus:ring-2 focus:ring-teal-500/20 text-lg" />
-         <button onClick={send} disabled={loading} className="bg-teal-500 text-white p-5 rounded-2xl hover:bg-teal-600 disabled:opacity-50"><Send /></button>
+         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder={t.chat_placeholder} className="flex-1 bg-slate-100 rounded-2xl p-5 outline-none focus:ring-2 focus:ring-teal-500/20 text-lg transition-all" />
+         <button onClick={send} disabled={loading} className="bg-teal-500 text-white p-5 rounded-2xl hover:bg-teal-600 disabled:opacity-50 hover:shadow-lg hover:shadow-teal-500/20 transition-all"><Send /></button>
        </div>
     </div>
   );
