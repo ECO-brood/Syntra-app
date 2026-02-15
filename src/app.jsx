@@ -22,7 +22,7 @@ import {
 
 // 1. GEMINI API KEY
 // Explicitly using your provided key to ensure connection works
-const apiKey = "AIzaSyCpJ2DVSaQaT84_cQlGIOev7tCSiqkNR1U"; 
+const apiKey = "AIzaSyCyo02bUMdw_6x7-kCzOHCOiKYMmZLJ-R0"; 
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
@@ -890,6 +890,7 @@ const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
     </div>
   );
 }
+
 
 
 
