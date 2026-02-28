@@ -1,0 +1,53 @@
+// api/chat.js
+export default async function handler(req, res) {
+  // Only allow POST requests
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { prompt, systemInstruction } = req.body;
+
+  try {
+    const messages = [];
+    if (systemInstruction) {
+      messages.push({ role: "system", content: systemInstruction });
+    }
+    messages.push({ role: "user", content: prompt });
+
+    // Grab the secret key from Vercel's secure environment variables
+    const apiKey = process.env.OPENAI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({ error: "Server missing OpenAI API Key." });
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: "gpt-5.2", // Ensure this model name is fully active on your account
+        messages: messages
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return res.status(response.status).json({ 
+        error: errorData?.error?.message || `HTTP ${response.status}: ${response.statusText}` 
+      });
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content || "Thinking...";
+    
+    // Send the AI's answer back to your React app
+    return res.status(200).json({ text });
+
+  } catch (error) {
+    console.error("Backend Error:", error);
+    return res.status(500).json({ error: "Failed to connect to AI server." });
+  }
+}
