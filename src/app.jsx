@@ -20,8 +20,7 @@ import {
 
 // --- CONFIGURATION ---
 
-// 1. OPENAI API KEY
-const apiKey = "sk-M52IB1h6pb783wJaciFahRAryfh3oXaT3fgCbCSgVO0Vukbt"; 
+// NOTICE: No API key here anymore! It lives securely in Vercel Environment Variables.
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
@@ -58,44 +57,26 @@ const getHybridUserId = (email) => {
   return email.toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
 };
 
-// --- OPENAI API HELPER ---
+// --- SECURE API HELPER (TALKS TO VERCEL BACKEND) ---
 const callAI = async (prompt, systemInstruction = "") => {
   try {
-    const messages = [];
-    if (systemInstruction) {
-      messages.push({ role: "system", content: systemInstruction });
-    }
-    messages.push({ role: "user", content: prompt });
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Call our own secure backend route instead of OpenAI directly
+    const response = await fetch('/api/chat', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: "gpt-5.2", // Might need to change if OpenAI throws a "Model not found" error
-        messages: messages
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, systemInstruction })
     });
 
-    // If OpenAI rejects the request, grab the exact reason why
+    const data = await response.json();
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const actualError = errorData?.error?.message || `HTTP ${response.status}: ${response.statusText}`;
-      console.error("OpenAI API Rejected Request:", actualError);
-      throw new Error(`OpenAI Error: ${actualError}`);
+      throw new Error(`Server Error: ${data.error || 'Unknown issue'}`);
     }
 
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || "Thinking...";
+    return data.text || "Thinking...";
   } catch (e) {
-    console.error(`Connection/Fetch error:`, e);
-    // TypeErrors on fetch usually mean the browser blocked it via CORS
-    if (e.name === 'TypeError') {
-      throw new Error("Network/CORS Error: Browser blocked the request. Check the developer console.");
-    }
-    throw e; // Pass the real error string down to the Chat interface
+    console.error(`Connection error:`, e);
+    throw new Error(e.message || "Network error communicating with the server.");
   }
 };
 
@@ -716,7 +697,7 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
           - Keep responses concise and encouraging.
         `;
 
-        // 4. Call AI
+        // 4. Call AI via your secure backend
         const aiRaw = await callAI(text, systemPrompt);
         let aiText = aiRaw;
         
