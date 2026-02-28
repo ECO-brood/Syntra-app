@@ -4,7 +4,7 @@ import {
   Calendar, Settings, User, Globe, ArrowRight, Sparkles, Send, 
   Plus, Trash2, Smile, Activity, Lightbulb, LogOut, Lock, Mail, 
   UserCircle, PenTool, ShieldCheck, Cloud, RefreshCw, Bell, 
-  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff
+  Menu, X, Edit3, AlertTriangle, Wifi, WifiOff, Target, Compass
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -20,9 +20,8 @@ import {
 
 // --- CONFIGURATION ---
 
-// 1. GEMINI API KEY
-// Explicitly using your provided key to ensure connection works
-const apiKey = "AIzaSyCyo02bUMdw_6x7-kCzOHCOiKYMmZLJ-R0"; 
+// 1. OPENAI API KEY (GPT 5.2)
+const apiKey = "sk-M52IB1h6pb783wJaciFahRAryfh3oXaT3fgCbCSgVO0Vukbt"; 
 
 // 2. FIREBASE CONFIGURATION
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
@@ -59,48 +58,39 @@ const getHybridUserId = (email) => {
   return email.toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
 };
 
-// --- GEMINI API HELPER ---
-const callGemini = async (prompt, systemInstruction = "") => {
-  // Using the hardcoded key to guarantee connection
-  const effectiveKey = apiKey; 
-  
-  // Models to try - added gemini-1.5-pro as a robust fallback
-  const models = ["gemini-1.5-flash", "gemini-2.5-flash-preview-09-2025", "gemini-pro"];
-
-  for (const model of models) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${effectiveKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ 
-              role: "user",
-              parts: [{ text: prompt }] 
-            }],
-            systemInstruction: {
-              parts: [{ text: systemInstruction }]
-            }
-          })
-        }
-      );
-
-      if (!response.ok) {
-        // Log detailed error for debugging
-        const errText = await response.text();
-        console.warn(`Model ${model} failed (${response.status}):`, errText);
-        continue; 
-      }
-
-      const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || "Thinking...";
-    } catch (e) {
-      console.warn(`Connection error on ${model}:`, e);
+// --- OPENAI API HELPER ---
+const callAI = async (prompt, systemInstruction = "") => {
+  try {
+    const messages = [];
+    if (systemInstruction) {
+      messages.push({ role: "system", content: systemInstruction });
     }
+    messages.push({ role: "user", content: prompt });
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: "gpt-5.2",
+        messages: messages
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.warn(`OpenAI API failed (${response.status}):`, errText);
+      throw new Error("Failed to connect to OpenAI."); 
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || "Thinking...";
+  } catch (e) {
+    console.warn(`Connection error:`, e);
+    throw new Error("Unable to connect to AI. Please check internet.");
   }
-  
-  throw new Error("Unable to connect to AI. Please check internet.");
 };
 
 // --- LOCALIZATION ---
@@ -133,13 +123,6 @@ const LANGUAGES = {
     scenario: "Scenario",
     delete: "Delete",
     chat_placeholder: "Talk to Aura...",
-    essay_c: "Think about a time you had a very difficult goal. How did you handle the pressure and the planning?",
-    essay_o: "If you could invent a new subject to be taught in schools that doesn't exist yet, what would it be and why?",
-    essay_free: "Free Space (20 mins): Write about anything on your mind right now.",
-    essay_title_c: "Part 1: Behavior Analysis",
-    essay_title_o: "Part 2: Imagination Analysis",
-    essay_title_free: "Part 3: Free Association",
-    type_here: "Type your response here...",
     syncing: "Online",
     inbox: "Inbox",
     welcome_subject: "Welcome to Syntra!",
@@ -178,13 +161,6 @@ const LANGUAGES = {
     scenario: "موقف",
     delete: "حذف",
     chat_placeholder: "اتكلم مع أورا...",
-    essay_c: "افتكر موقف كان عندك فيه هدف صعب جداً. اتصرفت ازاي مع الضغط والتخطيط؟",
-    essay_o: "لو تقدر تخترع مادة جديدة تدرس في المدارس مش موجودة دلوقتي، هتكون إيه وليه؟",
-    essay_free: "مساحة حرة (٢٠ دقيقة): اكتب عن أي حاجة في دماغك دلوقتي.",
-    essay_title_c: "الجزء ١: تحليل السلوك",
-    essay_title_o: "الجزء ٢: تحليل الخيال",
-    essay_title_free: "الجزء ٣: مساحة حرة",
-    type_here: "اكتب إجابتك هنا...",
     syncing: "متصل",
     inbox: "صندوق الوارد",
     welcome_subject: "مرحباً بك في سينترا!",
@@ -197,7 +173,7 @@ const LANGUAGES = {
   }
 };
 
-// --- FULL 40 UNIQUE SJT QUESTIONS (Restored) ---
+// --- FULL 40 UNIQUE SJT QUESTIONS ---
 const FULL_SJT = [
     // --- CONSCIENTIOUSNESS (20 Items) ---
     { id: 1, trait: 'C', text_en: "It's Thursday evening, and you have a major biology assignment due on Monday morning. Your friends just messaged you in the group chat about a spontaneous weekend trip to the beach that starts tomorrow morning. You haven't started the assignment yet.", text_ar: "النهارده الخميس بالليل، وعندك واجب أحياء كبير لازم يتسلم الاثنين الصبح. صحابك بعتولك على الجروب إنهم طالعين رحلة للعين السخنة بكرة الصبح، وأنت لسه مابدأتش في الواجب خالص.", options_en: ["Decline the trip immediately to ensure the assignment is finished with high quality.", "Go on the trip but wake up early Sunday to rush through the work.", "Take your laptop and books with you, planning to work during the trip.", "Go on the trip and decide to copy the assignment from a friend later."], options_ar: ["أعتذر عن الرحلة فوراً عشان أضمن إني أخلص الواجب بجودة عالية.", "أطلع الرحلة بس أصحى بدري يوم الأحد أكروته.", "آخد اللابتوب والكتب معايا بنية إني أذاكر هناك.", "أطلع الرحلة وأبقى أنقل الواجب من حد صاحبي بعدين."] },
@@ -344,7 +320,7 @@ export default function SyntraApp() {
           Mention their traits (C:${profileData.c_score}, O:${profileData.o_score}). 
           LANGUAGE: ${lang === 'ar' ? 'Egyptian Arabic' : 'English'}.`;
         
-        const emailBody = await callGemini(welcomePrompt);
+        const emailBody = await callAI(welcomePrompt);
         
         await addDoc(collection(db, 'artifacts', appId, 'users', activeUserId, 'inbox'), {
           subject: t.welcome_subject,
@@ -494,11 +470,15 @@ const OnboardingFlow = ({ t, onComplete }) => {
   const [data, setData] = useState({ name: '', age: '', c_score: 50, o_score: 50 });
 
   const handleInfoSubmit = (info) => { setData({ ...data, ...info }); setStep(1); };
-  const handleSJTSubmit = (scores) => { setData(prev => ({ ...prev, c_score: scores.c, o_score: scores.o })); setStep(2); };
-  const handleEssaySubmit = (essayData) => { 
-    const finalData = { ...data, ...essayData }; 
-    setStep(3); 
-    onComplete(finalData); 
+  const handleSJTSubmit = (scores) => { 
+    const finalData = { ...data, c_score: scores.c, o_score: scores.o };
+    setData(finalData);
+    setStep(2); // Jump to Analyzing
+    
+    // Slight delay to let the user see the "Analyzing" screen
+    setTimeout(() => {
+        onComplete(finalData);
+    }, 2000);
   };
 
   return (
@@ -514,8 +494,7 @@ const OnboardingFlow = ({ t, onComplete }) => {
         </div>
       )}
       {step === 1 && <SJTTest t={t} onComplete={handleSJTSubmit} />}
-      {step === 2 && <EssayTest t={t} onComplete={handleEssaySubmit} />}
-      {step === 3 && <div className="flex flex-col items-center justify-center"><Brain className="text-teal-500 animate-pulse w-24 h-24 mb-4" /><h2 className="text-2xl font-bold text-slate-800">{t.analyzing}</h2><p className="text-slate-400 mt-2 text-sm font-medium animate-pulse">Running Nominal Response Model...</p></div>}
+      {step === 2 && <div className="flex flex-col items-center justify-center animate-in fade-in duration-500"><Brain className="text-teal-500 animate-pulse w-24 h-24 mb-4" /><h2 className="text-2xl font-bold text-slate-800">{t.analyzing}</h2><p className="text-slate-400 mt-2 text-sm font-medium animate-pulse">Running Nominal Response Model...</p></div>}
     </div>
   );
 };
@@ -524,7 +503,7 @@ const SJTTest = ({ t, onComplete }) => {
   const [current, setCurrent] = useState(0);
   const handleSelect = () => {
     if (current < FULL_SJT.length - 1) setCurrent(c => c + 1);
-    else onComplete({ c: 75, o: 65 });
+    else onComplete({ c: 75, o: 65 }); // Logic placeholder for score calculation
   };
   const q = FULL_SJT[current];
   const progress = ((current + 1) / FULL_SJT.length) * 100;
@@ -540,37 +519,6 @@ const SJTTest = ({ t, onComplete }) => {
            ))}
          </div>
       </div>
-    </div>
-  );
-};
-
-const EssayTest = ({ t, onComplete }) => {
-  const [section, setSection] = useState(0); 
-  const [text, setText] = useState('');
-  const [responses, setResponses] = useState({});
-  const prompts = [
-    { title: t.essay_title_c, prompt: t.essay_c, key: 'c_essay' },
-    { title: t.essay_title_o, prompt: t.essay_o, key: 'o_essay' },
-    { title: t.essay_title_free, prompt: t.essay_free, key: 'free_essay' }
-  ];
-  const handleNext = () => {
-    const updated = { ...responses, [prompts[section].key]: text };
-    if (section < prompts.length - 1) { setResponses(updated); setSection(s => s + 1); setText(''); } 
-    else { onComplete(updated); }
-  };
-  return (
-    <div className="w-full animate-in slide-in-from-right duration-500">
-       <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-slate-100 min-h-[500px] flex flex-col relative">
-          <div className="flex justify-between items-center mb-6">
-             <h3 className="text-2xl font-bold text-slate-800">{prompts[section].title}</h3>
-             <div className="flex gap-2">{[0, 1, 2].map(i => <div key={i} className={`h-2 w-8 rounded-full transition-all ${i <= section ? 'bg-teal-500' : 'bg-slate-200'}`} />)}</div>
-          </div>
-          <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-6"><p className="text-lg text-slate-700 font-medium leading-relaxed">{prompts[section].prompt}</p></div>
-          <textarea value={text} onChange={e => setText(e.target.value)} className="flex-1 w-full p-5 bg-white rounded-xl border-2 border-slate-100 outline-none resize-none text-lg focus:border-teal-500 transition-all placeholder-slate-300" placeholder={t.type_here} autoFocus />
-          <div className="mt-6 flex justify-end">
-           <button onClick={handleNext} disabled={text.length < 5} className="bg-slate-900 text-white px-8 py-4 rounded-xl font-bold hover:bg-slate-800 transition-all disabled:opacity-50 flex items-center gap-2">{section === 2 ? t.submit : t.next} <ArrowRight size={18} /></button>
-          </div>
-       </div>
     </div>
   );
 };
@@ -644,6 +592,55 @@ const NavIcon = ({ icon, active, onClick }) => (
 
 // --- MODULES ---
 
+const ProfileGuide = ({ profile }) => {
+  const isHighC = profile.c_score >= 50;
+  const isHighO = profile.o_score >= 50;
+
+  return (
+    <div className="mx-8 mt-8 mb-4 p-8 bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl text-white shadow-xl animate-in slide-in-from-top-6">
+      <div className="flex items-center gap-3 mb-6">
+        <Sparkles className="text-teal-400" size={28} />
+        <h3 className="text-2xl font-bold tracking-tight">Your Brain's Blueprint</h3>
+      </div>
+      
+      <div className="grid md:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white/10 rounded-2xl p-6 border border-white/5 hover:bg-white/15 transition-all">
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-bold text-lg text-teal-300 flex items-center gap-2"><Target size={18} /> Conscientiousness</h4>
+            <span className="bg-teal-500 text-white px-3 py-1 rounded-full text-xs font-bold">{profile.c_score}%</span>
+          </div>
+          <p className="text-slate-300 text-sm leading-relaxed">
+            {isHighC 
+              ? "You are The Planner. You thrive on structure, clear step-by-step goals, and knowing exactly what's next. We'll use this to build rock-solid study routines."
+              : "You are The Adaptable. Rigid schedules stress you out. You prefer going with the flow and tackling tasks dynamically. We'll focus on flexible, high-energy burst sessions."}
+          </p>
+        </div>
+        
+        <div className="bg-white/10 rounded-2xl p-6 border border-white/5 hover:bg-white/15 transition-all">
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-bold text-lg text-purple-300 flex items-center gap-2"><Compass size={18} /> Openness</h4>
+            <span className="bg-purple-500 text-white px-3 py-1 rounded-full text-xs font-bold">{profile.o_score}%</span>
+          </div>
+          <p className="text-slate-300 text-sm leading-relaxed">
+            {isHighO 
+              ? "You are The Explorer. You love big ideas, concepts, and creativity. We'll maximize your learning by connecting facts to interesting stories and larger theories."
+              : "You are The Realist. You prefer hard facts, practical examples, and direct applications. We'll cut the fluff and focus purely on what works and why it matters."}
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-teal-900/40 rounded-2xl p-6 border border-teal-500/20">
+        <h4 className="font-bold text-lg mb-4 flex items-center gap-2"><Lightbulb className="text-yellow-400" size={20}/> How to Maximize Syntra:</h4>
+        <ul className="text-slate-300 space-y-3 text-sm">
+          <li className="flex gap-3"><MessageCircle className="text-teal-400 shrink-0" size={18}/> <strong>Chat with Aura:</strong> Ask me to explain difficult concepts! I will automatically adjust my teaching style to match your exact Openness and Conscientiousness traits.</li>
+          <li className="flex gap-3"><Calendar className="text-purple-400 shrink-0" size={18}/> <strong>Smart Planner:</strong> Dump your massive projects there. Use the "Magic Breakdown" to let me split them into manageable tasks based on your focus levels.</li>
+          <li className="flex gap-3"><BookOpen className="text-blue-400 shrink-0" size={18}/> <strong>Neuro Journal:</strong> Log your stressful days or wins. I will analyze your thoughts and provide a 1-sentence brain-hack tailored specifically to your personality.</li>
+        </ul>
+      </div>
+    </div>
+  );
+};
+
 const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState('');
@@ -713,8 +710,8 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
           - Keep responses concise and encouraging.
         `;
 
-        // 4. Call AI
-        const aiRaw = await callGemini(text, systemPrompt);
+        // 4. Call AI (GPT-5.2)
+        const aiRaw = await callAI(text, systemPrompt);
         let aiText = aiRaw;
         
         // 5. Parse Commands (ADD/MOD)
@@ -768,19 +765,23 @@ const ChatModule = ({ t, userId, lang, profile, appId, isOffline }) => {
 
   return (
     <div className="h-full flex flex-col bg-slate-50/50">
-       <div className="flex-1 overflow-y-auto p-8 space-y-6">
-         {msgs.length === 0 && <div className="text-center text-slate-400 mt-20 opacity-50">{t.chat_placeholder}</div>}
-         {msgs.map((m) => (
-            <div key={m.id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
-              <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'} ${m.text.includes('⚠️') ? 'bg-red-50 text-red-600 border-red-200' : ''}`}>{m.text}</div>
-            </div>
-          ))}
-          {loading && <div className="flex justify-start"><div className="bg-white p-4 rounded-3xl text-slate-400 italic text-sm"><Sparkles size={14} className="animate-spin inline mr-2"/>Aura thinking...</div></div>}
-          <div ref={scrollRef} />
+       <div className="flex-1 overflow-y-auto pb-8">
+         <ProfileGuide profile={profile} />
+         
+         <div className="px-8 space-y-6">
+           {msgs.length === 0 && <div className="text-center text-slate-400 mt-10 opacity-50">{t.chat_placeholder}</div>}
+           {msgs.map((m) => (
+              <div key={m.id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
+                <div className={`max-w-[80%] p-6 rounded-3xl text-lg shadow-sm ${m.role === 'user' ? 'bg-slate-900 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none text-slate-700'} ${m.text.includes('⚠️') ? 'bg-red-50 text-red-600 border-red-200' : ''}`}>{m.text}</div>
+              </div>
+           ))}
+           {loading && <div className="flex justify-start"><div className="bg-white p-4 rounded-3xl text-slate-400 italic text-sm"><Sparkles size={14} className="animate-spin inline mr-2"/>Aura thinking...</div></div>}
+           <div ref={scrollRef} />
+         </div>
        </div>
-       <div className="p-6 bg-white border-t border-slate-100 flex gap-4">
+       <div className="p-6 bg-white border-t border-slate-100 flex gap-4 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.05)] z-10">
          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder={t.chat_placeholder} className="flex-1 bg-slate-100 rounded-2xl p-5 outline-none focus:ring-2 focus:ring-teal-500/20 text-lg" />
-         <button onClick={send} disabled={loading} className="bg-teal-500 text-white p-5 rounded-2xl hover:bg-teal-600 disabled:opacity-50"><Send /></button>
+         <button onClick={send} disabled={loading} className="bg-teal-500 text-white p-5 rounded-2xl hover:bg-teal-600 disabled:opacity-50 transition-all shadow-md shadow-teal-500/20"><Send /></button>
        </div>
     </div>
   );
@@ -834,7 +835,7 @@ const PlannerModule = ({ t, userId, lang, profile, appId, isOffline }) => {
   const magicBreakdown = async () => {
     if (!newTask.trim()) return;
     setIsMagicLoading(true);
-    const result = await callGemini(`Break down goal "${newTask}" into 3 steps. Language: ${lang === 'ar' ? 'Egyptian Arabic' : 'English'}. Return steps joined by |||`);
+    const result = await callAI(`Break down goal "${newTask}" into 3 steps. Language: ${lang === 'ar' ? 'Egyptian Arabic' : 'English'}. Return steps joined by |||`);
     const subtasks = result.split('|||').map(s => s.trim()).filter(s => s);
     for (const st of subtasks) await addTask(st, 'ai-magic');
     setNewTask('');
@@ -874,7 +875,7 @@ const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
   const [insight, setInsight] = useState('');
   const analyze = async () => {
     if(entry.length < 10) return;
-    const res = await callGemini(`Analyze journal: "${entry}". Give 1 sentence advice in ${lang === 'ar' ? 'Egyptian Arabic' : 'English'}.`);
+    const res = await callAI(`Analyze journal: "${entry}". Give 1 sentence advice in ${lang === 'ar' ? 'Egyptian Arabic' : 'English'}.`);
     setInsight(res);
   }
   return (
@@ -890,7 +891,3 @@ const JournalModule = ({ t, userId, lang, appId, isOffline }) => {
     </div>
   );
 }
-
-
-
-
